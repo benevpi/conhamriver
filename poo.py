@@ -48,7 +48,8 @@ resp.raise_for_status()
 data = resp.json()
 
 bands = [1, 5, 10, 20, 50]
-band_durations = {b: 0 for b in bands}
+band_edges = [1, 5, 10, 20, 50]
+band_durations = [0] * len(band_edges)
 
 if data.get("features"):
     for feat in data["features"]:
@@ -60,20 +61,25 @@ if data.get("features"):
         if start and end and lat is not None and lon is not None:
             duration_seconds = (end - start) / 1000
             dist = haversine(ref_lat, ref_lon, lat, lon)
-            for b in bands:
-                if dist <= b:
-                    band_durations[b] += duration_seconds
+            for i, edge in enumerate(band_edges):
+                lower = 0 if i == 0 else band_edges[i-1]
+                if lower < dist <= edge:
+                    band_durations[i] += duration_seconds
                     break
 
-# --- RISK LEVEL CALCULATION ---
-total_seconds = sum(band_durations.values())
+
+# (For risk logic: use band_durations[0] and sum(band_durations[0:2]) for within 1 and within 5)
+total_seconds = sum(band_durations)
 risk = "Low"
-if band_durations[1] > 0 or band_durations[5] > 0 or total_seconds > 3600:
+if band_durations[0] > 0 or sum(band_durations[0:2]) > 1800:
     risk = "High"
 elif total_seconds == 0:
     risk = "Low"
 else:
     risk = "Medium"
+    
+report_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
 
 # ---- HTML RENDER ----
 
@@ -108,9 +114,9 @@ html = f"""
             margin-bottom: 0.5em;
             text-align: center;
         }}
-        .risk-high {{ color: red; font-weight: bold; font-size: 1.3em; }}
-        .risk-medium {{ color: orange; font-weight: bold; font-size: 1.1em; }}
-        .risk-low {{ color: green; font-weight: bold; font-size: 1.1em; }}
+        .risk-high {{ color: red; font-weight: bold; font-size: 2.2em; }}
+        .risk-medium {{ color: orange; font-weight: bold; font-size: 2.2em; }}
+        .risk-low {{ color: green; font-weight: bold; font-size: 2.2em; }}
         .poo-emoji {{
             font-size: 4em;
             display: block;
@@ -123,14 +129,23 @@ html = f"""
             margin-top: 1em;
             text-align: center;
         }}
+        .risk-level-line {{
+            margin-top: 0.5em;
+            margin-bottom: 0.5em;
+            font-size: 2.2em;
+            font-weight: bold;
+        }}
     </style>
 </head>
 <body>
 <h1>Is there poo in Conham River?</h1>
 {"<span class='poo-emoji'>💩</span>" if risk == "High" else ""}
-<p>
-Risk level = <span class="risk-{risk.lower()}">{risk}</span>
-</p>
+<div class="risk-level-line">
+    Risk level = <span class="risk-{risk.lower()}">{risk}</span>
+</div
+
+<div class="generated-time">Report generated: {report_time}</div>
+
 <table>
     <caption>Total storm overflows upstream of Conham river by distance</caption>
     <tr>
@@ -139,9 +154,17 @@ Risk level = <span class="risk-{risk.lower()}">{risk}</span>
     </tr>
 """
 
-for b in bands:
-    hours, minutes = seconds_to_h_m(band_durations[b])
-    html += f"<tr><td>Within {b} mile(s)</td><td>{hours} hours {minutes} minutes</td></tr>\n"
+band_labels = [
+    "Within 1 mile",
+    "1 to 5 miles",
+    "5 to 10 miles",
+    "10 to 20 miles",
+    "20 to 50 miles"
+]
+
+for i, label in enumerate(band_labels):
+    hours, minutes = seconds_to_h_m(band_durations[i])
+    html += f"<tr><td>{label}</td><td>{hours} hours {minutes} minutes</td></tr>\n"
 
 html += """
 </table>
@@ -151,6 +174,7 @@ html += """
 </body>
 </html>
 """
+
 
 # Write HTML file
 import os
