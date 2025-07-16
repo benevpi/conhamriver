@@ -147,7 +147,7 @@ html = f"""
 <div class="generated-time">Report generated: {report_time}</div>
 
 <table>
-    <caption>Total storm overflows upstream of Conham river by distance</caption>
+    <caption>Total storm overflows upstream of Conham river in the last 48 hours by distance</caption>
     <tr>
         <th>Distance Band</th>
         <th>Total Duration</th>
