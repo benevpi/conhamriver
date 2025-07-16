@@ -23,7 +23,7 @@ jobs:
         run: pip install requests
 
       - name: Generate HTML report
-        run: python yourscript.py   # replace with your filename
+        run: python poo.py   # replace with your filename
 
       - name: Commit HTML to docs/
         run: |
