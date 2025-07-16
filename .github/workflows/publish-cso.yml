@@ -2,8 +2,11 @@ name: Generate and publish Conham report
 
 on:
   schedule:
-    - cron: '15 0 * * *'      # every hour at :15, adjust as needed
+    - cron: '15 * * * *'      # every hour at :15, adjust as needed
   workflow_dispatch:
+
+permissions:
+  contents: write
 
 jobs:
   build-and-publish:
@@ -20,7 +23,7 @@ jobs:
         run: pip install requests
 
       - name: Generate HTML report
-        run: python poo.py   # replace with your filename
+        run: python yourscript.py   # replace with your filename
 
       - name: Commit HTML to docs/
         run: |
@@ -28,4 +31,8 @@ jobs:
           git config --global user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add docs/index.html
           git commit -m "Update report [skip ci]" || echo "No changes to commit"
-          git push
+
+      - name: Push changes
+        uses: ad-m/github-push-action@v0.8.0
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
