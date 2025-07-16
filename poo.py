@@ -277,27 +277,37 @@ def risk_class(risk):
 def risk_emoji(risk):
     return "💩" if risk == "High" else ""
     
-index_html = """
+report_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    
+index_html = f"""
 <!DOCTYPE html>
 <html>
 <head>
     <meta charset="utf-8">
     <title>Is there poo in the river?</title>
     <style>
-        body { font-family: Arial, sans-serif; margin: 2em; text-align: center; }
-        table { border-collapse: collapse; margin: 2em auto 0 auto; }
-        th, td { border: 1px solid #aaa; padding: 0.7em 1.5em; text-align: center; font-size: 1.2em; }
-        th { background: #e3f1fa; }
-        tr:nth-child(even) { background: #f9f9f9; }
-        .risk-high { color: red; font-weight: bold; font-size: 1.5em; }
-        .risk-medium { color: orange; font-weight: bold; font-size: 1.2em; }
-        .risk-low { color: green; font-weight: bold; font-size: 1.2em; }
-        .poo-emoji { font-size: 2em; vertical-align: middle; }
-        caption { font-size: 1.3em; font-weight: bold; margin-bottom: 1em; }
+        body {{ font-family: Arial, sans-serif; margin: 2em; text-align: center; }}
+        table {{ border-collapse: collapse; margin: 2em auto 0 auto; }}
+        th, td {{ border: 1px solid #aaa; padding: 0.7em 1.5em; text-align: center; font-size: 1.2em; }}
+        th {{ background: #e3f1fa; }}
+        tr:nth-child(even) {{ background: #f9f9f9; }}
+        .risk-high {{ color: red; font-weight: bold; font-size: 1.5em; }}
+        .risk-medium {{ color: orange; font-weight: bold; font-size: 1.2em; }}
+        .risk-low {{ color: green; font-weight: bold; font-size: 1.2em; }}
+        .poo-emoji {{ font-size: 2em; vertical-align: middle; }}
+        caption {{ font-size: 1.3em; font-weight: bold; margin-bottom: 1em; }}
     </style>
 </head>
 <body>
     <h1>Is there poo in the river?</h1>
+    
+    <div class="generated-time">Report generated: {report_time}. If if has rained since then, the data may be inaccurate</div>
+</br>
+<div class="generated-time">The risk is based entirely on the author's personal risk tolerance. River swimming is never 100% safe, so it's up to you to make an informed decision </div>
+</br>
+<div class="generated-time">This system is currently being tested and may produce unexpected or inaccurate results, but it's trying it's hardest</div>
+
+
     <table>
         <caption>Swim sites and current risk</caption>
         <tr>
