@@ -175,6 +175,7 @@ html += """
 <div class="disclaimer">
     Distances are as the crow flies (not measured along the river or watercourse).
 </div>
+<script src="https://cdn.counter.dev/script.js" data-id="99522e23-c138-4047-babb-1e1503dd4a6f" data-utcoffset="1"></script>
 </body>
 </html>
 """
