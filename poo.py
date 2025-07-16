@@ -157,6 +157,7 @@ def generate_report(river_name, river_label, rivers_to_query, ref_lat, ref_lon, 
             text-align: center;
         }}
     </style>
+    <script src="https://cdn.counter.dev/script.js" data-id="99522e23-c138-4047-babb-1e1503dd4a6f" data-utcoffset="1"></script>
 </head>
 <body>
 <h1>Is there poo in {river_label}?</h1>
@@ -297,6 +298,7 @@ index_html = f"""
         .poo-emoji {{ font-size: 2em; vertical-align: middle; }}
         caption {{ font-size: 1.3em; font-weight: bold; margin-bottom: 1em; }}
     </style>
+    <script src="https://cdn.counter.dev/script.js" data-id="99522e23-c138-4047-babb-1e1503dd4a6f" data-utcoffset="1"></script>
 </head>
 <body>
     <h1>Is there poo in the river?</h1>
