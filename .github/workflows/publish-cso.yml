@@ -2,7 +2,7 @@ name: Generate and publish Conham report
 
 on:
   schedule:
-    - cron: '15 * * * *'      # every hour at :15, adjust as needed
+    - cron: '15 */3 * * *'      # every hour at :15, adjust as needed
   workflow_dispatch:
 
 permissions:
