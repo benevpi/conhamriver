@@ -30,6 +30,10 @@ jobs:
           git config --global user.name "github-actions[bot]"
           git config --global user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add docs/index.html
+          git add docs/conham.html
+          git add docs/chew.html
+          git add docs/salford.html
+          git add docs/warleigh.html
           git commit -m "Update report [skip ci]" || echo "No changes to commit"
 
       - name: Push changes
