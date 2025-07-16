@@ -144,10 +144,11 @@ html = f"""
     Risk level = <span class="risk-{risk.lower()}">{risk}</span>
 </div
 
-<div class="generated-time">Report generated: {report_time}</div>
+<div class="generated-time">Report generated: {report_time}. If this is more than 24 hours ago, then the information may be inaccurate. If it's currently raining then it may be inaccurate</div>
+<div class="generated-time">This system is currently being tested and may produce unexpected or inaccurate results, but it's trying it's hardest</div>
 
 <table>
-    <caption>Total storm overflows upstream of Conham river in the last 48 hours by distance</caption>
+    <caption>Total storm overflows in the last two days upstream of Conham river by distance</caption>
     <tr>
         <th>Distance Band</th>
         <th>Total Duration</th>
