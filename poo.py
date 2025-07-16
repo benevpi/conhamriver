@@ -145,6 +145,9 @@ html = f"""
 </div
 
 <div class="generated-time">Report generated: {report_time}. If this is more than 24 hours ago, then the information may be inaccurate. If it's currently raining then it may be inaccurate</div>
+</br>
+<div class="generated-time">The risk is based entirely on the author's personal risk tolerance. River swimming is never 100% safe, so it's up to you to make an informed decision </div>
+</br>
 <div class="generated-time">This system is currently being tested and may produce unexpected or inaccurate results, but it's trying it's hardest</div>
 
 <table>
