@@ -144,7 +144,7 @@ html = f"""
     Risk level = <span class="risk-{risk.lower()}">{risk}</span>
 </div
 
-<div class="generated-time">Report generated: {report_time}. If this is more than 24 hours ago, then the information may be inaccurate. If it's currently raining then it may be inaccurate</div>
+<div class="generated-time">Report generated: {report_time}. If if has rained since then, the data may be inaccurate</div>
 </br>
 <div class="generated-time">The risk is based entirely on the author's personal risk tolerance. River swimming is never 100% safe, so it's up to you to make an informed decision </div>
 </br>
