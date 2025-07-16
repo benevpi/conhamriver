@@ -3,85 +3,53 @@
 <html>
 <head>
     <meta charset="utf-8">
-    <title>Is there poo in Conham River?</title>
+    <title>Is there poo in the river?</title>
     <style>
-        body {
-            font-family: Arial, sans-serif;
-            margin: 2em;
-            text-align: center;
-        }
-        h1 { color: #006699; text-align: center; }
-        table {
-            border-collapse: collapse;
-            margin: 1.5em auto 0 auto;
-            text-align: center;
-        }
-        th, td {
-            border: 1px solid #aaa;
-            padding: 0.5em 1em;
-            text-align: center;
-        }
+        body { font-family: Arial, sans-serif; margin: 2em; text-align: center; }
+        table { border-collapse: collapse; margin: 2em auto 0 auto; }
+        th, td { border: 1px solid #aaa; padding: 0.7em 1.5em; text-align: center; font-size: 1.2em; }
         th { background: #e3f1fa; }
         tr:nth-child(even) { background: #f9f9f9; }
-        caption {
-            font-weight: bold;
-            font-size: 1.1em;
-            margin-bottom: 0.5em;
-            text-align: center;
-        }
-        .risk-high { color: red; font-weight: bold; font-size: 2.2em; }
-        .risk-medium { color: orange; font-weight: bold; font-size: 2.2em; }
-        .risk-low { color: green; font-weight: bold; font-size: 2.2em; }
-        .poo-emoji {
-            font-size: 4em;
-            display: block;
-            text-align: center;
-            margin: 0.3em 0;
-        }
-        .disclaimer {
-            font-size: 0.95em;
-            color: #444;
-            margin-top: 1em;
-            text-align: center;
-        }
-        .risk-level-line {
-            margin-top: 0.5em;
-            margin-bottom: 0.5em;
-            font-size: 2.2em;
-            font-weight: bold;
-        }
+        .risk-high { color: red; font-weight: bold; font-size: 1.5em; }
+        .risk-medium { color: orange; font-weight: bold; font-size: 1.2em; }
+        .risk-low { color: green; font-weight: bold; font-size: 1.2em; }
+        .poo-emoji { font-size: 2em; vertical-align: middle; }
+        caption { font-size: 1.3em; font-weight: bold; margin-bottom: 1em; }
     </style>
-    <script src="https://cdn.counter.dev/script.js" data-id="99522e23-c138-4047-babb-1e1503dd4a6f" data-utcoffset="1"></script>
 </head>
 <body>
-<h1>Is there poo in Conham River?</h1>
-
-<div class="risk-level-line">
-    Risk level = <span class="risk-medium">Medium</span>
-</div
-
-<div class="generated-time">Report generated: 2025-07-16 18:46:15. If if has rained since then, the data may be inaccurate</div>
-</br>
-<div class="generated-time">The risk is based entirely on the author's personal risk tolerance. River swimming is never 100% safe, so it's up to you to make an informed decision </div>
-</br>
-<div class="generated-time">This system is currently being tested and may produce unexpected or inaccurate results, but it's trying it's hardest</div>
-
-<table>
-    <caption>Total storm overflows in the last two days upstream of Conham river by distance</caption>
-    <tr>
-        <th>Distance Band</th>
-        <th>Total Duration</th>
+    <h1>Is there poo in the river?</h1>
+    <table>
+        <caption>Swim sites and current risk</caption>
+        <tr>
+            <th>Site</th>
+            <th>Risk Level</th>
+            <th>Details</th>
+        </tr>
+<tr>
+        <td>Avon at Conham River</td>
+        <td class="risk-medium">Medium </td>
+        <td><a href="conham.html">View report</a></td>
     </tr>
-<tr><td>Within 1 mile</td><td>0 hours 0 minutes</td></tr>
-<tr><td>1 to 5 miles</td><td>0 hours 6 minutes</td></tr>
-<tr><td>5 to 10 miles</td><td>0 hours 10 minutes</td></tr>
-<tr><td>10 to 20 miles</td><td>0 hours 12 minutes</td></tr>
-<tr><td>20 to 50 miles</td><td>0 hours 0 minutes</td></tr>
-
-</table>
-<div class="disclaimer">
-    Distances are as the crow flies (not measured along the river or watercourse).
-</div>
-
+    <tr>
+        <td>Avon at Salford</td>
+        <td class="risk-medium">Medium </td>
+        <td><a href="salford.html">View report</a></td>
+    </tr>
+    <tr>
+        <td>Avon at Warleigh Weir</td>
+        <td class="risk-low">Low </td>
+        <td><a href="warleigh.html">View report</a></td>
+    </tr>
+    <tr>
+        <td>River Chew at Publow</td>
+        <td class="risk-medium">Medium </td>
+        <td><a href="chew.html">View report</a></td>
+    </tr>
+    
+    </table>
+    <div style="margin-top:1.5em;font-size:0.95em;color:#444;">
+        Reports are based on storm overflow data and automated "upstream" calculations for each site. See detailed reports for logic and disclaimers.
+    </div>
 </body>
 </html>
