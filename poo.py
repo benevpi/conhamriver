@@ -182,8 +182,8 @@ reports = [
         "rivers_to_query": [
             'RIVER AVON', 'bathford brook (s)', 'horsecombe brook', 'river avon via sws'
         ],
-        "ref_lat": 51.444858,
-        "ref_lon": -2.534812,
+        "ref_lat": 51.398639, 
+        "ref_lon": -2.446917,
         "filename": "salford",
         "upstream_func": is_upstream_salford,
     },
@@ -206,7 +206,7 @@ reports = [
             'winford brook',
             'river chew(s)',
         ],
-        "ref_lat": 51.375278, -2.543306
+        "ref_lat": 51.375278,
         "ref_lon": -2.543306,
         "filename": "chew",
         "upstream_func": is_upstream_chew,
