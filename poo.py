@@ -2,6 +2,7 @@ import requests
 from datetime import datetime, timedelta
 from math import radians, sin, cos, sqrt, atan2
 import os
+from string import Template
 
 index_data = []
 
@@ -96,104 +97,24 @@ def generate_report(river_name, river_label, rivers_to_query, ref_lat, ref_lon, 
         risk = "Medium"
     report_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
-    # HTML generation
-    html = f"""
-<!DOCTYPE html>
-<html>
-<head>
-    <meta charset="utf-8">
-    <title>Is there poo in {river_label}?</title>
-    <style>
-        body {{
-            font-family: Arial, sans-serif;
-            margin: 2em;
-            text-align: center;
-        }}
-        h1 {{ color: #006699; text-align: center; }}
-        table {{
-            border-collapse: collapse;
-            margin: 1.5em auto 0 auto;
-            text-align: center;
-        }}
-        th, td {{
-            border: 1px solid #aaa;
-            padding: 0.5em 1em;
-            text-align: center;
-        }}
-        th {{ background: #e3f1fa; }}
-        tr:nth-child(even) {{ background: #f9f9f9; }}
-        caption {{
-            font-weight: bold;
-            font-size: 1.1em;
-            margin-bottom: 0.5em;
-            text-align: center;
-        }}
-        .risk-high {{ color: red; font-weight: bold; font-size: 2.2em; }}
-        .risk-medium {{ color: orange; font-weight: bold; font-size: 2.2em; }}
-        .risk-low {{ color: green; font-weight: bold; font-size: 2.2em; }}
-        .poo-emoji {{
-            font-size: 4em;
-            display: block;
-            text-align: center;
-            margin: 0.3em 0;
-        }}
-        .disclaimer {{
-            font-size: 0.95em;
-            color: #444;
-            margin-top: 1em;
-            text-align: center;
-        }}
-        .risk-level-line {{
-            margin-top: 0.5em;
-            margin-bottom: 0.5em;
-            font-size: 2.2em;
-            font-weight: bold;
-        }}
-        .generated-time {{
-            font-size: 1.1em;
-            color: #333;
-            margin-bottom: 1em;
-            margin-top: 0;
-            text-align: center;
-        }}
-    </style>
-    <script src="https://cdn.counter.dev/script.js" data-id="99522e23-c138-4047-babb-1e1503dd4a6f" data-utcoffset="1"></script>
-</head>
-<body>
-<h1>Is there poo in {river_label}?</h1>
-{"<span class='poo-emoji'>💩</span>" if risk == "High" else ""}
-<div class="risk-level-line">
-    Risk level = <span class="risk-{risk.lower()}">{risk}</span>
-</div>
-
-<div class="generated-time">Report generated: {report_time}. If if has rained since then, the data may be inaccurate</div>
-</br>
-<div class="generated-time">The risk is based entirely on the author's personal risk tolerance. River swimming is never 100% safe, so it's up to you to make an informed decision </div>
-</br>
-<div class="generated-time">This system is currently being tested and may produce unexpected or inaccurate results, but it's trying it's hardest</div>
-
-
-
-<table>
-    <caption>Total storm overflows in the last two days upstream of {river_label} by distance</caption>
-    <tr>
-        <th>Distance Band</th>
-        <th>Total Duration</th>
-    </tr>
-    """
+    table_rows = ""
     for i, label in enumerate(band_labels):
         hours, minutes = seconds_to_h_m(band_durations[i])
-        html += f"<tr><td>{label}</td><td>{hours} hours {minutes} minutes</td></tr>\n"
-    html += """
-</table>
-<div class="disclaimer">
-    This tool uses a simplified "upstream" test based on longitude and/or latitude. For Conham, CSOs east of the site are counted as upstream. This may include or miss some actual upstream sources, especially in complex river sections.
-    <br>Distances are as the crow flies (not measured along the river or watercourse).
-</div>
-</body>
-</html>
-"""
-    # Save to docs/filename
+        table_rows += f"<tr><td>{label}</td><td>{hours} hours {minutes} minutes</td></tr>\n"
+
+    template_path = os.path.join("templates", "report_template.html")
+    with open(template_path, "r", encoding="utf-8") as tpl_file:
+        tpl = Template(tpl_file.read())
+
+    html = tpl.substitute(
+        river_label=river_label,
+        risk=risk,
+        risk_lower=risk.lower(),
+        report_time=report_time,
+        poo_emoji_block="<span class='poo-emoji'>💩</span>" if risk == "High" else "",
+        table_rows=table_rows,
+    )
+
     os.makedirs("docs", exist_ok=True)
     with open(f"docs/{filename}.html", "w", encoding="utf-8") as f:
         f.write(html)
@@ -279,62 +200,22 @@ def risk_emoji(risk):
     return "💩" if risk == "High" else ""
     
 report_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    
-index_html = f"""
-<!DOCTYPE html>
-<html>
-<head>
-    <meta charset="utf-8">
-    <title>Is there poo in the river?</title>
-    <style>
-        body {{ font-family: Arial, sans-serif; margin: 2em; text-align: center; }}
-        table {{ border-collapse: collapse; margin: 2em auto 0 auto; }}
-        th, td {{ border: 1px solid #aaa; padding: 0.7em 1.5em; text-align: center; font-size: 1.2em; }}
-        th {{ background: #e3f1fa; }}
-        tr:nth-child(even) {{ background: #f9f9f9; }}
-        .risk-high {{ color: red; font-weight: bold; font-size: 1.5em; }}
-        .risk-medium {{ color: orange; font-weight: bold; font-size: 1.2em; }}
-        .risk-low {{ color: green; font-weight: bold; font-size: 1.2em; }}
-        .poo-emoji {{ font-size: 2em; vertical-align: middle; }}
-        caption {{ font-size: 1.3em; font-weight: bold; margin-bottom: 1em; }}
-    </style>
-    <script src="https://cdn.counter.dev/script.js" data-id="99522e23-c138-4047-babb-1e1503dd4a6f" data-utcoffset="1"></script>
-</head>
-<body>
-    <h1>Is there poo in the river?</h1>
-    
-    <div class="generated-time">Report generated: {report_time}. If if has rained since then, the data may be inaccurate</div>
-</br>
-<div class="generated-time">The risk is based entirely on the author's personal risk tolerance. River swimming is never 100% safe, so it's up to you to make an informed decision </div>
-</br>
-<div class="generated-time">This system is currently being tested and may produce unexpected or inaccurate results, but it's trying it's hardest</div>
 
-
-    <table>
-        <caption>Swim sites and current risk</caption>
-        <tr>
-            <th>Site</th>
-            <th>Risk Level</th>
-            <th>Details</th>
-        </tr>
-"""
-
+table_rows = ""
 for entry in index_data:
-    index_html += f"""<tr>
-        <td>{entry['site']}</td>
-        <td class="{risk_class(entry['risk'])}">{entry['risk']} {risk_emoji(entry['risk'])}</td>
-        <td><a href="{entry['filename']}">View report</a></td>
-    </tr>
-    """
+    table_rows += (
+        f"<tr>"
+        f"<td>{entry['site']}</td>"
+        f"<td class=\"{risk_class(entry['risk'])}\">{entry['risk']} {risk_emoji(entry['risk'])}</td>"
+        f"<td><a href=\"{entry['filename']}\">View report</a></td>"
+        "</tr>\n"
+    )
 
-index_html += """
-    </table>
-    <div style="margin-top:1.5em;font-size:0.95em;color:#444;">
-        Reports are based on storm overflow data and automated "upstream" calculations for each site. See detailed reports for logic and disclaimers.
-    </div>
-</body>
-</html>
-"""
+template_path = os.path.join("templates", "index_template.html")
+with open(template_path, "r", encoding="utf-8") as tpl_file:
+    tpl = Template(tpl_file.read())
+
+index_html = tpl.substitute(report_time=report_time, table_rows=table_rows)
 
 with open("docs/index.html", "w", encoding="utf-8") as f:
     f.write(index_html)
