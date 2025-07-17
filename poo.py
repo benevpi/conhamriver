@@ -1,3 +1,4 @@
+import json
 import requests
 from datetime import datetime, timedelta
 from math import radians, sin, cos, sqrt, atan2
@@ -241,6 +242,8 @@ for r in reports:
         "filename": r["filename"] + ".html",
         "risk": risk,
         "warnings": warnings,
+        "lat": r["ref_lat"],
+        "lon": r["ref_lon"],
     })
     
 # Risk color classes, emoji if desired
@@ -280,6 +283,7 @@ index_html = tpl.substitute(
     report_time=report_time,
     table_rows=table_rows,
     weather_message_index=weather_message_index,
+    site_data=json.dumps(index_data),
 )
 
 with open("docs/index.html", "w", encoding="utf-8") as f:
