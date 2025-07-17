@@ -193,8 +193,8 @@ reports = [
         "rivers_to_query": [
             'RIVER AVON', 'bathford brook (s)','Bristol Avon', 'River Frome', 'river avon via sws'
         ],
-        "ref_lat": 51.444858,
-        "ref_lon": -2.534812,
+        "ref_lat": 51.376556,
+        "ref_lon":  -2.301611,
         "filename": "warleigh",
         "upstream_func": is_upstream_warleigh,
     },
@@ -206,8 +206,8 @@ reports = [
             'winford brook',
             'river chew(s)',
         ],
-        "ref_lat": 51.415847,
-        "ref_lon": -2.497921,
+        "ref_lat": 51.375278, -2.543306
+        "ref_lon": -2.543306,
         "filename": "chew",
         "upstream_func": is_upstream_chew,
     },
