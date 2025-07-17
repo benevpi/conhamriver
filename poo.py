@@ -20,6 +20,36 @@ def seconds_to_h_m(seconds):
     minutes = int((seconds % 3600) // 60)
     return hours, minutes
 
+# Fetch precipitation forecast from open-meteo and return warning messages
+def get_precipitation_warnings(lat, lon):
+    """Return a list of warning strings for days with >5mm rain in next 3 days."""
+    url = "https://api.open-meteo.com/v1/forecast"
+    params = {
+        "latitude": lat,
+        "longitude": lon,
+        "daily": "precipitation_sum",
+        "forecast_days": 3,
+        "timezone": "UTC",
+    }
+    try:
+        resp = requests.get(url, params=params, timeout=10)
+        resp.raise_for_status()
+        data = resp.json()
+    except Exception as e:
+        # On failure, just return an empty list
+        print(f"Failed to fetch weather data: {e}")
+        return []
+
+    warnings = []
+    times = data.get("daily", {}).get("time", [])
+    precip = data.get("daily", {}).get("precipitation_sum", [])
+    for day, rain in zip(times, precip):
+        if rain is not None and rain > 5:
+            warnings.append(
+                f"{day}: {rain}mm of rain forecast - water quality likely to get worse after this day"
+            )
+    return warnings
+
 # Upstream filter functions for each site
 def is_upstream_conham(lat, lon):
     # Upstream if longitude is greater (i.e., east of the swim site)
@@ -102,6 +132,9 @@ def generate_report(river_name, river_label, rivers_to_query, ref_lat, ref_lon, 
         hours, minutes = seconds_to_h_m(band_durations[i])
         table_rows += f"<tr><td>{label}</td><td>{hours} hours {minutes} minutes</td></tr>\n"
 
+    warnings = get_precipitation_warnings(ref_lat, ref_lon)
+    weather_message = "<br>".join(warnings) if warnings else ""
+
     template_path = os.path.join("templates", "report_template.html")
     with open(template_path, "r", encoding="utf-8") as tpl_file:
         tpl = Template(tpl_file.read())
@@ -113,13 +146,14 @@ def generate_report(river_name, river_label, rivers_to_query, ref_lat, ref_lon, 
         report_time=report_time,
         poo_emoji_block="<span class='poo-emoji'>💩</span>" if risk == "High" else "",
         table_rows=table_rows,
+        weather_message=weather_message,
     )
 
     os.makedirs("docs", exist_ok=True)
     with open(f"docs/{filename}.html", "w", encoding="utf-8") as f:
         f.write(html)
     print(f"HTML report written to docs/{filename}.html")
-    return risk
+    return risk, warnings
 
 # --- Define rivers/reports you want to generate ---
 reports = [
@@ -173,7 +207,7 @@ reports = [
 ]
 
 for r in reports:
-    risk = generate_report(
+    risk, warnings = generate_report(
         river_name=r["river_name"],
         river_label=r["river_label"],
         rivers_to_query=r["rivers_to_query"],
@@ -185,7 +219,8 @@ for r in reports:
     index_data.append({
         "site": r["river_label"],
         "filename": r["filename"] + ".html",
-        "risk": risk
+        "risk": risk,
+        "warnings": warnings,
     })
     
 # Risk color classes, emoji if desired
@@ -211,11 +246,21 @@ for entry in index_data:
         "</tr>\n"
     )
 
+all_warnings = []
+for entry in index_data:
+    for w in entry.get("warnings", []):
+        all_warnings.append(f"{entry['site']}: {w}")
+weather_message_index = "<br>".join(all_warnings)
+
 template_path = os.path.join("templates", "index_template.html")
 with open(template_path, "r", encoding="utf-8") as tpl_file:
     tpl = Template(tpl_file.read())
 
-index_html = tpl.substitute(report_time=report_time, table_rows=table_rows)
+index_html = tpl.substitute(
+    report_time=report_time,
+    table_rows=table_rows,
+    weather_message_index=weather_message_index,
+)
 
 with open("docs/index.html", "w", encoding="utf-8") as f:
     f.write(index_html)
