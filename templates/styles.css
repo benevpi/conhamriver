@@ -7,6 +7,19 @@ body {
     color: var(--text);
 }
 
+.content-container {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    align-items: flex-start;
+    gap: 2em;
+}
+
+.content-container table,
+.content-container #map {
+    flex: 1 1 400px;
+}
+
 h1 {
     color: var(--heading);
     text-align: center;
