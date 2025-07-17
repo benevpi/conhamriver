@@ -1,0 +1,137 @@
+/* Base styling shared across themes */
+body {
+    font-family: Arial, sans-serif;
+    margin: 2em;
+    text-align: center;
+    background-color: var(--bg);
+    color: var(--text);
+}
+
+h1 {
+    color: var(--heading);
+    text-align: center;
+}
+
+table {
+    border-collapse: collapse;
+    margin: 1.5em auto 0 auto;
+    text-align: center;
+}
+
+th, td {
+    border: 1px solid var(--border);
+    padding: 0.7em 1.5em;
+    text-align: center;
+}
+
+th {
+    background: var(--header-bg);
+}
+
+tr:nth-child(even) {
+    background: var(--row-even);
+}
+
+caption {
+    font-size: 1.3em;
+    font-weight: bold;
+    margin-bottom: 1em;
+}
+
+.risk-high {
+    color: var(--risk-high);
+    font-weight: bold;
+    font-size: 1.5em;
+}
+
+.risk-medium {
+    color: var(--risk-medium);
+    font-weight: bold;
+    font-size: 1.2em;
+}
+
+.risk-low {
+    color: var(--risk-low);
+    font-weight: bold;
+    font-size: 1.2em;
+}
+
+.poo-emoji {
+    font-size: 2em;
+    vertical-align: middle;
+}
+
+.disclaimer {
+    font-size: 0.95em;
+    color: var(--text-secondary);
+    margin-top: 1em;
+    text-align: center;
+}
+
+.risk-level-line {
+    margin-top: 0.5em;
+    margin-bottom: 0.5em;
+    font-size: 2.2em;
+    font-weight: bold;
+}
+
+.generated-time {
+    font-size: 1.1em;
+    color: var(--text);
+    margin-bottom: 1em;
+    margin-top: 0;
+    text-align: center;
+}
+
+.rain-warning {
+    font-size: 1.1em;
+    color: var(--rain);
+    font-weight: bold;
+    margin-top: 1em;
+    text-align: center;
+}
+
+/* Light theme (default) */
+.theme-light {
+    --bg: #ffffff;
+    --text: #000000;
+    --text-secondary: #444444;
+    --header-bg: #e3f1fa;
+    --row-even: #f9f9f9;
+    --border: #aaaaaa;
+    --heading: #006699;
+    --risk-high: red;
+    --risk-medium: orange;
+    --risk-low: green;
+    --rain: #2255aa;
+}
+
+/* Dark theme */
+.theme-dark {
+    --bg: #111111;
+    --text: #eeeeee;
+    --text-secondary: #cccccc;
+    --header-bg: #333333;
+    --row-even: #222222;
+    --border: #555555;
+    --heading: #66bbee;
+    --risk-high: #ff7777;
+    --risk-medium: #ffbb44;
+    --risk-low: #88ee88;
+    --rain: #7aa9ff;
+}
+
+/* Ocean theme */
+.theme-ocean {
+    --bg: #f0fbff;
+    --text: #023859;
+    --text-secondary: #02556e;
+    --header-bg: #d0ecff;
+    --row-even: #e8f6ff;
+    --border: #8ab4f8;
+    --heading: #0277b2;
+    --risk-high: #d62c2c;
+    --risk-medium: #ff851b;
+    --risk-low: #1f8a70;
+    --rain: #025e8f;
+}
