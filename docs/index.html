@@ -5,6 +5,7 @@
     <meta charset="utf-8">
     <title>Is there poo in the river?</title>
     <link rel="stylesheet" href="styles.css">
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
     <script src="https://cdn.counter.dev/script.js" data-id="99522e23-c138-4047-babb-1e1503dd4a6f" data-utcoffset="1"></script>
 </head>
 <body class="theme-ocean">
@@ -44,10 +45,13 @@
         <td class="risk-medium">Medium </td>
         <td><a href="chew.html">View report</a></td>
     </tr>
-    
+
     </table>
+    <div id="map"></div>
     <div style="margin-top:1.5em;font-size:0.95em;color:#444;">
         Reports are based on storm overflow data and automated "upstream" calculations for each site. See detailed reports for logic and disclaimers.
     </div>
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script src="index.js"></script>
 </body>
 </html>

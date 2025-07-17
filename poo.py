@@ -2,6 +2,7 @@ import requests
 from datetime import datetime, timedelta
 from math import radians, sin, cos, sqrt, atan2
 import os
+import json
 from string import Template
 
 index_data = []
@@ -241,6 +242,8 @@ for r in reports:
         "filename": r["filename"] + ".html",
         "risk": risk,
         "warnings": warnings,
+        "lat": r["ref_lat"],
+        "lon": r["ref_lon"],
     })
     
 # Risk color classes, emoji if desired
@@ -286,3 +289,33 @@ with open("docs/index.html", "w", encoding="utf-8") as f:
     f.write(index_html)
 
 print("Index page written to docs/index.html")
+
+# --- Generate index.js with map data ---
+center_lat = sum(e["lat"] for e in index_data) / len(index_data) if index_data else 0
+center_lon = sum(e["lon"] for e in index_data) / len(index_data) if index_data else 0
+
+sites_json = json.dumps([
+    {
+        "name": e["site"],
+        "lat": e["lat"],
+        "lon": e["lon"],
+        "risk": e["risk"],
+        "link": e["filename"],
+    }
+    for e in index_data
+])
+
+js_template_path = os.path.join("templates", "index_js_template.js")
+with open(js_template_path, "r", encoding="utf-8") as js_tpl_file:
+    js_tpl = Template(js_tpl_file.read())
+
+index_js = js_tpl.substitute(
+    center_lat=center_lat,
+    center_lon=center_lon,
+    sites_json=sites_json,
+)
+
+with open("docs/index.js", "w", encoding="utf-8") as f:
+    f.write(index_js)
+
+print("Index script written to docs/index.js")
