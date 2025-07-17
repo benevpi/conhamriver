@@ -67,6 +67,13 @@ def is_upstream_chew(lat, lon):
     # Upstream if west of -2.5432 (i.e., longitude less than -2.5432)
     return lon < -2.5432
 
+# For Farleigh Hungerford on the River Frome, upstream CSOs are generally
+# to the south of the swim spot. Treat discharges south of the site as
+# upstream based on latitude.
+def is_upstream_farleigh(lat, lon):
+    # Upstream if latitude is less than the site's latitude
+    return lat < 51.3299
+
 def generate_report(river_name, river_label, rivers_to_query, ref_lat, ref_lon, filename, upstream_func):
     now = datetime.utcnow()
     two_days_ago_dt = now - timedelta(days=2)
@@ -202,6 +209,19 @@ reports = [
         "ref_lon": -2.497921,
         "filename": "chew",
         "upstream_func": is_upstream_chew,
+    },
+    {
+        "river_name": "farleigh",
+        "river_label": "River Frome at Farleigh Hungerford",
+        "rivers_to_query": [
+            'River Frome',
+            'Bristol Avon',
+            'river avon via sws'
+        ],
+        "ref_lat": 51.3299,
+        "ref_lon": -2.288,
+        "filename": "farleigh",
+        "upstream_func": is_upstream_farleigh,
     },
     # Add more dicts here for other rivers/sites as needed
 ]

@@ -34,6 +34,7 @@ jobs:
           git add docs/chew.html
           git add docs/salford.html
           git add docs/warleigh.html
+          git add docs/farleigh.html
           git commit -m "Update report [skip ci]" || echo "No changes to commit"
 
       - name: Push changes
