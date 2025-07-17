@@ -91,6 +91,11 @@ caption {
     text-align: center;
 }
 
+#map {
+    height: 400px;
+    margin-top: 1em;
+}
+
 /* Light theme (default) */
 .theme-light {
     --bg: #ffffff;
