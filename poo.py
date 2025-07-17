@@ -2,6 +2,7 @@ import requests
 from datetime import datetime, timedelta
 from math import radians, sin, cos, sqrt, atan2
 import os
+import json
 from string import Template
 
 index_data = []
@@ -286,3 +287,32 @@ with open("docs/index.html", "w", encoding="utf-8") as f:
     f.write(index_html)
 
 print("Index page written to docs/index.html")
+
+# ----- Generate index.js for map markers -----
+spots = []
+for report, entry in zip(reports, index_data):
+    spots.append({
+        "lat": report["ref_lat"],
+        "lon": report["ref_lon"],
+        "risk": entry["risk"],
+        "link": entry["filename"],
+        "label": report["river_label"],
+    })
+
+center_lat = sum(r["ref_lat"] for r in reports) / len(reports)
+center_lon = sum(r["ref_lon"] for r in reports) / len(reports)
+
+js_template_path = os.path.join("templates", "index_js_template.js")
+with open(js_template_path, "r", encoding="utf-8") as tpl_file:
+    js_tpl = Template(tpl_file.read())
+
+index_js = js_tpl.substitute(
+    spots_json=json.dumps(spots),
+    center_lat=center_lat,
+    center_lon=center_lon,
+)
+
+with open("docs/index.js", "w", encoding="utf-8") as f:
+    f.write(index_js)
+
+print("Index JS written to docs/index.js")

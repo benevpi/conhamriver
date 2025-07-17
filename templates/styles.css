@@ -135,3 +135,21 @@ caption {
     --risk-low: #1f8a70;
     --rain: #025e8f;
 }
+
+/* Map styling */
+#map {
+    height: 400px;
+    margin: 2em auto;
+    width: 80%;
+}
+
+.marker-icon {
+    width: 20px;
+    height: 20px;
+    border-radius: 50%;
+    border: 2px solid #fff;
+}
+
+.marker-high { background: var(--risk-high); }
+.marker-medium { background: var(--risk-medium); }
+.marker-low { background: var(--risk-low); }
