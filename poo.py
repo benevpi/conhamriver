@@ -276,11 +276,12 @@ report_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
 table_rows = ""
 for entry in index_data:
+    clear_time = entry['safe_time'] or ("now" if entry['risk'] == "Low" else "")
     table_rows += (
         f"<tr>"
         f"<td>{entry['site']}</td>"
         f"<td class=\"{risk_class(entry['risk'])}\">{entry['risk']} {risk_emoji(entry['risk'])}</td>"
-        f"<td>{entry['safe_time'] or ''}</td>"
+        f"<td>{clear_time}</td>"
         f"<td><a href=\"{entry['filename']}\">View report</a></td>"
         "</tr>\n"
     )
