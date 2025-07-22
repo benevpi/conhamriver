@@ -51,6 +51,14 @@ caption {
     margin-bottom: 1em;
 }
 
+.site-heading {
+    font-size: 1.3em;
+    font-weight: bold;
+    margin-bottom: 1em;
+    width: 100%;
+    text-align: center;
+}
+
 .risk-high {
     color: var(--risk-high);
     font-weight: bold;
