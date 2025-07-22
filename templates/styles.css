@@ -96,6 +96,12 @@ caption {
     font-weight: bold;
 }
 
+.risk-note {
+    font-size: 1.3em;
+    font-weight: bold;
+    margin-bottom: 0.5em;
+}
+
 .generated-time {
     font-size: 1.1em;
     color: var(--text);
