@@ -107,6 +107,7 @@ def generate_report(river_name, river_label, rivers_to_query, ref_lat, ref_lon, 
         "20 to 50 miles"
     ]
     band_durations = [0] * len(band_edges)
+    last_cso_end = None
 
     if data.get("features"):
         for feat in data["features"]:
@@ -123,6 +124,8 @@ def generate_report(river_name, river_label, rivers_to_query, ref_lat, ref_lon, 
                     if lower < dist <= edge:
                         band_durations[i] += duration_seconds
                         break
+                if last_cso_end is None or end > last_cso_end:
+                    last_cso_end = end
 
     # Risk calculation as before
     total_seconds = sum(band_durations)
@@ -143,6 +146,14 @@ def generate_report(river_name, river_label, rivers_to_query, ref_lat, ref_lon, 
     warnings = get_precipitation_warnings(ref_lat, ref_lon)
     weather_message = "<br>".join(warnings) if warnings else ""
 
+    risk_note_block = ""
+    if risk in ("Medium", "High") and last_cso_end:
+        last_end_dt = datetime.utcfromtimestamp(last_cso_end / 1000)
+        safe_dt = last_end_dt + timedelta(hours=48)
+        risk_note_block = (
+            f"<div class='risk-note'>If there is no further rain, the risk will be low at {safe_dt.strftime('%Y-%m-%d %H:%M:%S')} UTC</div>"
+        )
+
     template_path = os.path.join("templates", "report_template.html")
     with open(template_path, "r", encoding="utf-8") as tpl_file:
         tpl = Template(tpl_file.read())
@@ -155,6 +166,7 @@ def generate_report(river_name, river_label, rivers_to_query, ref_lat, ref_lon, 
         poo_emoji_block="<span class='poo-emoji'>💩</span>" if risk == "High" else "",
         table_rows=table_rows,
         weather_message=weather_message,
+        risk_note_block=risk_note_block,
     )
 
     os.makedirs("docs", exist_ok=True)
