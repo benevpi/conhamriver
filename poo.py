@@ -136,7 +136,7 @@ def generate_report(river_name, river_label, rivers_to_query, ref_lat, ref_lon, 
         risk = "Low"
     else:
         risk = "Medium"
-    report_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    report_time = datetime.now().strftime("%d/%m/%Y at %H:%M")
 
     table_rows = ""
     for i, label in enumerate(band_labels):
@@ -151,7 +151,7 @@ def generate_report(river_name, river_label, rivers_to_query, ref_lat, ref_lon, 
     if risk in ("Medium", "High") and last_cso_end:
         last_end_dt = datetime.utcfromtimestamp(last_cso_end / 1000)
         safe_dt = last_end_dt + timedelta(hours=48)
-        safe_time = safe_dt.strftime('%Y-%m-%d %H:%M:%S')
+        safe_time = safe_dt.strftime('%d/%m/%Y at %H:%M')
         risk_note_block = (
             f"<div class='risk-note'>If there is no further rain, the risk will be low at {safe_time} UTC</div>"
         )
@@ -272,7 +272,7 @@ def risk_class(risk):
 def risk_emoji(risk):
     return "💩" if risk == "High" else ""
     
-report_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+report_time = datetime.now().strftime("%d/%m/%Y at %H:%M")
 
 table_rows = ""
 for entry in index_data:
