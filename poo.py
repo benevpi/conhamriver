@@ -147,11 +147,13 @@ def generate_report(river_name, river_label, rivers_to_query, ref_lat, ref_lon, 
     weather_message = "<br>".join(warnings) if warnings else ""
 
     risk_note_block = ""
+    safe_time = None
     if risk in ("Medium", "High") and last_cso_end:
         last_end_dt = datetime.utcfromtimestamp(last_cso_end / 1000)
         safe_dt = last_end_dt + timedelta(hours=48)
+        safe_time = safe_dt.strftime('%Y-%m-%d %H:%M:%S')
         risk_note_block = (
-            f"<div class='risk-note'>If there is no further rain, the risk will be low at {safe_dt.strftime('%Y-%m-%d %H:%M:%S')} UTC</div>"
+            f"<div class='risk-note'>If there is no further rain, the risk will be low at {safe_time} UTC</div>"
         )
 
     template_path = os.path.join("templates", "report_template.html")
@@ -173,7 +175,7 @@ def generate_report(river_name, river_label, rivers_to_query, ref_lat, ref_lon, 
     with open(f"docs/{filename}.html", "w", encoding="utf-8") as f:
         f.write(html)
     print(f"HTML report written to docs/{filename}.html")
-    return risk, warnings
+    return risk, warnings, safe_time
 
 # --- Define rivers/reports you want to generate ---
 reports = [
@@ -240,7 +242,7 @@ reports = [
 ]
 
 for r in reports:
-    risk, warnings = generate_report(
+    risk, warnings, safe_time = generate_report(
         river_name=r["river_name"],
         river_label=r["river_label"],
         rivers_to_query=r["rivers_to_query"],
@@ -254,6 +256,7 @@ for r in reports:
         "filename": r["filename"] + ".html",
         "risk": risk,
         "warnings": warnings,
+        "safe_time": safe_time,
         "lat": r["ref_lat"],
         "lon": r["ref_lon"],
     })
@@ -277,6 +280,7 @@ for entry in index_data:
         f"<tr>"
         f"<td>{entry['site']}</td>"
         f"<td class=\"{risk_class(entry['risk'])}\">{entry['risk']} {risk_emoji(entry['risk'])}</td>"
+        f"<td>{entry['safe_time'] or ''}</td>"
         f"<td><a href=\"{entry['filename']}\">View report</a></td>"
         "</tr>\n"
     )
