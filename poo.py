@@ -183,7 +183,7 @@ reports = [
         "river_name": "conham",
         "river_label": "Avon at Conham River",
         "rivers_to_query": [
-            'RIVER AVON', 'RIVER CHEW', 'charlton bottom via sws', 'bathford brook (s)', 'horsecombe brook', 'river avon via sws'
+            'RIVER AVON', 'RIVER CHEW', 'charlton bottom via sws', 'bathford brook (s)', 'horsecombe brook', 'river avon via sws', 'river avon (via sws)'
         ],
         "ref_lat": 51.444858,
         "ref_lon": -2.534812,
@@ -194,9 +194,9 @@ reports = [
         "river_name": "salford",
         "river_label": "Avon at Salford",
         "rivers_to_query": [
-            'RIVER AVON', 'bathford brook (s)', 'horsecombe brook', 'river avon via sws'
+            'RIVER AVON', 'bathford brook (s)', 'horsecombe brook', 'river avon via sws', 'river avon (via sws)'
         ],
-        "ref_lat": 51.398639, 
+        "ref_lat": 51.398639,
         "ref_lon": -2.446917,
         "filename": "salford",
         "upstream_func": is_upstream_salford,
@@ -205,7 +205,7 @@ reports = [
         "river_name": "warleigh",
         "river_label": "Avon at Warleigh Weir",
         "rivers_to_query": [
-            'RIVER AVON', 'bathford brook (s)','Bristol Avon', 'River Frome', 'river avon via sws'
+            'RIVER AVON', 'bathford brook (s)','Bristol Avon', 'River Frome', 'river avon via sws', 'river avon (via sws)'
         ],
         "ref_lat": 51.376556,
         "ref_lon":  -2.301611,
