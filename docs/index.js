@@ -1,5 +1,5 @@
 // Leaflet map initialization
-const sites = [{"name": "Avon at Conham River", "lat": 51.444858, "lon": -2.534812, "risk": "Low", "link": "conham.html"}, {"name": "Avon at Salford", "lat": 51.398639, "lon": -2.446917, "risk": "Low", "link": "salford.html"}, {"name": "Avon at Warleigh Weir", "lat": 51.376556, "lon": -2.301611, "risk": "Low", "link": "warleigh.html"}, {"name": "River Chew at Publow", "lat": 51.375278, "lon": -2.543306, "risk": "Medium", "link": "chew.html"}, {"name": "River Frome at Farleigh Hungerford", "lat": 51.3299, "lon": -2.288, "risk": "Low", "link": "farleigh.html"}];
+const sites = [{"name": "Avon at Conham River", "lat": 51.444858, "lon": -2.534812, "risk": "Medium", "link": "conham.html"}, {"name": "Avon at Salford", "lat": 51.398639, "lon": -2.446917, "risk": "High", "link": "salford.html"}, {"name": "Avon at Warleigh Weir", "lat": 51.376556, "lon": -2.301611, "risk": "High", "link": "warleigh.html"}, {"name": "River Chew at Publow", "lat": 51.375278, "lon": -2.543306, "risk": "Medium", "link": "chew.html"}, {"name": "River Frome at Farleigh Hungerford", "lat": 51.3299, "lon": -2.288, "risk": "Medium", "link": "farleigh.html"}];
 
 const map = L.map('map').setView([51.3850462, -2.4229291999999996], 10);
 L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
