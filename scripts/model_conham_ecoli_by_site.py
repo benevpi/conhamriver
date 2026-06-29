@@ -284,9 +284,17 @@ def solve_ridge(matrix, target, ridge):
 # --------------------------------------------------------------------------- #
 # Step 2: model
 # --------------------------------------------------------------------------- #
-def load_site_features(path: Path, lookback: int):
-    """Return (dates, ecoli, site_meta, spill[date][site]) at a fixed lookback."""
-    ecoli: dict[str, float] = {}
+def load_site_features(path: Path, samples_path: Path, lookback: int):
+    """Return (dates, ecoli, site_meta, spill[date][site]) at a fixed lookback.
+
+    The authoritative date/E. coli list comes from the sampling CSV so that
+    sample dates with no spill anywhere (no rows in the per-outfall CSV) are kept
+    as all-zero feature rows rather than silently dropped.
+    """
+    ecoli: dict[str, float] = {row["sample_date"]: row["e_coli_cfu_per_100ml"] for row in (
+        {"sample_date": s["sample_date"].isoformat(), "e_coli_cfu_per_100ml": s["e_coli_cfu_per_100ml"]}
+        for s in read_samples(samples_path)
+    )}
     spill: dict[str, dict[str, float]] = defaultdict(dict)
     meta: dict[str, dict] = {}
     with path.open(newline="", encoding="utf-8") as handle:
@@ -294,7 +302,8 @@ def load_site_features(path: Path, lookback: int):
             if int(row["lookback_days"]) != lookback:
                 continue
             d = row["sample_date"]
-            ecoli[d] = float(row["e_coli_cfu_per_100ml"])
+            if d not in ecoli:  # ignore stray dates not in the sampling CSV
+                continue
             site = row["site_name"] or row["site_id"]
             spill[d][site] = spill[d].get(site, 0.0) + float(row["spill_hours"])
             meta.setdefault(site, {"distance_miles": row.get("distance_miles", ""), "watercourse": row.get("receiving_watercourse", "")})
@@ -378,7 +387,7 @@ def run_model(args) -> int:
             f"{path} not found. Run `python {Path(__file__).name} fetch` first "
             "(needs network access to the ArcGIS 2025 EDM view)."
         )
-    dates, ecoli, meta, spill = load_site_features(path, args.lookback)
+    dates, ecoli, meta, spill = load_site_features(path, Path(args.samples), args.lookback)
     if not dates:
         raise SystemExit(f"No rows at lookback_days={args.lookback} in {path}")
 
@@ -519,6 +528,13 @@ def write_report(path, dates, lookback, ranking, selected, beta, stats, history,
             "- Only 25 sample dates but many outfalls, so single-outfall correlations are",
             "  noisy and the multi-outfall selection can latch onto coincidences. Treat the",
             "  ranking as a shortlist of candidates, not proof of causation.",
+            "- Nearby outfalls spill together in the same rain, so their spill series are",
+            "  highly collinear and have near-identical correlations. The model cannot",
+            "  cleanly separate one culprit; read the top of the ranking as a *cluster*",
+            "  (here, Bath-area River Avon outfalls) rather than a single source. For the",
+            "  same reason the multi-outfall fit can assign negative coefficients to",
+            "  collinear partners (suppressor effects) -- those are statistical artefacts,",
+            "  not evidence that an outfall improves water quality.",
             "- Forward selection used all dates to choose outfalls; the reported LOOCV error",
             "  for the chosen set is therefore mildly optimistic.",
             "- E. coli values are chart-digitised and right-censored at 1000 CFU/100ml.",
@@ -564,6 +580,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     m = sub.add_parser("model", help="Rank outfalls and fit the model from the cached CSV (offline)")
     m.add_argument("--features", **common_features)
+    m.add_argument("--samples", default="docs/data/conham_sampling_2025_2026_e_coli.csv", help="E. coli sampling CSV (authoritative date list)")
     m.add_argument("--predictions", default=PREDICTIONS_CSV)
     m.add_argument("--report", default=REPORT_MD)
     m.add_argument("--lookback", type=int, default=DEFAULT_LOOKBACK)
@@ -573,6 +590,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     a = sub.add_parser("all", help="fetch then model")
     a.add_argument("--input", default="docs/data/conham_sampling_2025_2026_e_coli.csv")
+    a.add_argument("--samples", default="docs/data/conham_sampling_2025_2026_e_coli.csv", help="E. coli sampling CSV (authoritative date list)")
     a.add_argument("--features", **common_features)
     a.add_argument("--predictions", default=PREDICTIONS_CSV)
     a.add_argument("--report", default=REPORT_MD)
