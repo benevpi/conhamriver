@@ -1,0 +1,26 @@
+sample_date,analyte,cfu_per_100ml,value_note,source
+2025-05-22,Escherichia coli,10,,https://www.conhambathing.co.uk/sampling
+2025-06-17,Escherichia coli,140,,https://www.conhambathing.co.uk/sampling
+2025-07-09,Escherichia coli,85,,https://www.conhambathing.co.uk/sampling
+2025-07-21,Escherichia coli,95,,https://www.conhambathing.co.uk/sampling
+2025-07-26,Escherichia coli,620,,https://www.conhambathing.co.uk/sampling
+2025-08-02,Escherichia coli,85,,https://www.conhambathing.co.uk/sampling
+2025-08-09,Escherichia coli,490,,https://www.conhambathing.co.uk/sampling
+2025-08-16,Escherichia coli,145,,https://www.conhambathing.co.uk/sampling
+2025-08-23,Escherichia coli,20,,https://www.conhambathing.co.uk/sampling
+2025-08-30,Escherichia coli,20,,https://www.conhambathing.co.uk/sampling
+2025-09-06,Escherichia coli,470,,https://www.conhambathing.co.uk/sampling
+2025-09-13,Escherichia coli,1000,,https://www.conhambathing.co.uk/sampling
+2025-09-20,Escherichia coli,100,,https://www.conhambathing.co.uk/sampling
+2025-09-27,Escherichia coli,1000,,https://www.conhambathing.co.uk/sampling
+2025-10-04,Escherichia coli,240,,https://www.conhambathing.co.uk/sampling
+2025-10-11,Escherichia coli,110,,https://www.conhambathing.co.uk/sampling
+2025-10-18,Escherichia coli,220,,https://www.conhambathing.co.uk/sampling
+2025-10-25,Escherichia coli,180,,https://www.conhambathing.co.uk/sampling
+2025-11-01,Escherichia coli,330,,https://www.conhambathing.co.uk/sampling
+2025-11-08,Escherichia coli,370,,https://www.conhambathing.co.uk/sampling
+2025-11-22,Escherichia coli,1000,,https://www.conhambathing.co.uk/sampling
+2025-11-29,Escherichia coli,10,,https://www.conhambathing.co.uk/sampling
+2025-12-04,Escherichia coli,450,,https://www.conhambathing.co.uk/sampling
+2025-12-11,Escherichia coli,1000,lab maximum shown as >1000 on source page when exceeded,https://www.conhambathing.co.uk/sampling
+2025-12-18,Escherichia coli,1000,lab maximum shown as >1000 on source page when exceeded,https://www.conhambathing.co.uk/sampling
