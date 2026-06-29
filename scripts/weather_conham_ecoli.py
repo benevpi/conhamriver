@@ -13,9 +13,13 @@ Open-Meteo's free historical archive (ERA5 reanalysis, no API key):
 
     https://archive-api.open-meteo.com/v1/archive
 
+Rainfall is fetched at two points: Conham itself, and upstream in Bath (~8-9
+miles up the River Avon, where the spill-driving CSO cluster sits). The
+upstream rain should track those spills better than rain at Conham.
+
 Two steps, like model_conham_ecoli_by_site.py, because the fetch needs network:
 
-    python scripts/weather_conham_ecoli.py fetch     # -> docs/data/conham_weather_daily.csv
+    python scripts/weather_conham_ecoli.py fetch     # -> Conham + Bath daily weather CSVs
     python scripts/weather_conham_ecoli.py analyze   # offline correlations + combined model
 
 Method (analyze)
@@ -24,12 +28,13 @@ For each E. coli sample date, weather is summarised over 1- to 7-day lookback
 windows: cumulative rainfall, heaviest single day, mean/min temperature. The
 script then:
 
-1. ranks weather features by univariate correlation with log10(E. coli);
-2. compares leave-one-out cross-validation (LOOCV) error for a rainfall-only
-   model, the existing best CSO feature, and a combined CSO+rainfall model, to
-   see whether weather adds anything beyond the CSO signal;
-3. reports per-day percentage error and flags the rainfall on the high-E. coli
-   days the CSO model could not explain.
+1. ranks weather features (local + upstream rainfall, temperature) by univariate
+   correlation with log10(E. coli);
+2. compares leave-one-out cross-validation (LOOCV) error for rainfall-only
+   (local and upstream), the best CSO feature, and combined CSO+weather models,
+   to see whether weather adds anything beyond the CSO signal;
+3. reports per-day percentage error and compares local vs upstream rainfall on
+   the high-E. coli days the CSO model could not explain.
 
 Standard library only.
 """
@@ -49,9 +54,15 @@ from pathlib import Path
 ARCHIVE_URL = "https://archive-api.open-meteo.com/v1/archive"
 CONHAM_LAT = 51.444858
 CONHAM_LON = -2.534812
+# Upstream point in central Bath, where the spill-driving CSO cluster sits
+# (~8-9 miles up the River Avon). Rain here should track those spills better than
+# rain at Conham itself.
+BATH_LAT = 51.3800
+BATH_LON = -2.3590
 MAX_LOOKBACK = 7
 
 WEATHER_CSV = "docs/data/conham_weather_daily.csv"
+UPSTREAM_WEATHER_CSV = "docs/data/conham_upstream_weather_daily.csv"
 CSO_FEATURES_CSV = "docs/data/conham_cso_ecoli_features.csv"
 SAMPLES_CSV = "docs/data/conham_sampling_2025_2026_e_coli.csv"
 PREDICTIONS_CSV = "docs/data/conham_weather_ecoli_predictions.csv"
@@ -74,10 +85,10 @@ def read_samples(path: Path) -> dict[str, float]:
 # --------------------------------------------------------------------------- #
 # Step 1: fetch daily weather
 # --------------------------------------------------------------------------- #
-def fetch_weather(start: date, end: date) -> list[dict]:
+def fetch_weather(start: date, end: date, lat: float = CONHAM_LAT, lon: float = CONHAM_LON) -> list[dict]:
     params = {
-        "latitude": CONHAM_LAT,
-        "longitude": CONHAM_LON,
+        "latitude": lat,
+        "longitude": lon,
         "start_date": start.isoformat(),
         "end_date": end.isoformat(),
         "daily": "precipitation_sum,rain_sum,temperature_2m_mean,temperature_2m_max,temperature_2m_min",
@@ -105,26 +116,34 @@ def fetch_weather(start: date, end: date) -> list[dict]:
     return rows
 
 
+def _write_weather(rows: list[dict], path: Path) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("w", newline="", encoding="utf-8") as handle:
+        writer = csv.DictWriter(handle, fieldnames=["date", "precipitation_mm", "rain_mm", "temp_mean_c", "temp_max_c", "temp_min_c"])
+        writer.writeheader()
+        writer.writerows(rows)
+
+
 def run_fetch(args) -> int:
     samples = read_samples(Path(args.samples))
     sample_dates = sorted(date.fromisoformat(d) for d in samples)
     start = min(sample_dates) - timedelta(days=MAX_LOOKBACK + 1)
     end = max(sample_dates)
-    try:
-        rows = fetch_weather(start, end)
-    except urllib.error.URLError as exc:
-        raise SystemExit(
-            f"Could not reach Open-Meteo ({ARCHIVE_URL}): {exc}.\n"
-            "Run `fetch` where archive-api.open-meteo.com egress is allowed, commit "
-            f"{args.weather}, then run the `analyze` step."
-        )
-    out = Path(args.weather)
-    out.parent.mkdir(parents=True, exist_ok=True)
-    with out.open("w", newline="", encoding="utf-8") as handle:
-        writer = csv.DictWriter(handle, fieldnames=["date", "precipitation_mm", "rain_mm", "temp_mean_c", "temp_max_c", "temp_min_c"])
-        writer.writeheader()
-        writer.writerows(rows)
-    print(f"Wrote {out} ({len(rows)} days, {start}..{end})")
+    locations = [
+        ("Conham", CONHAM_LAT, CONHAM_LON, Path(args.weather)),
+        ("Bath (upstream)", BATH_LAT, BATH_LON, Path(args.upstream_weather)),
+    ]
+    for name, lat, lon, out in locations:
+        try:
+            rows = fetch_weather(start, end, lat, lon)
+        except urllib.error.URLError as exc:
+            raise SystemExit(
+                f"Could not reach Open-Meteo ({ARCHIVE_URL}): {exc}.\n"
+                "Run `fetch` where archive-api.open-meteo.com egress is allowed, commit "
+                f"{args.weather} and {args.upstream_weather}, then run the `analyze` step."
+            )
+        _write_weather(rows, out)
+        print(f"Wrote {out} ({name}: {len(rows)} days, {start}..{end})")
     return 0
 
 
@@ -253,23 +272,35 @@ def run_analyze(args) -> int:
     ecoli = read_samples(Path(args.samples))
     dates = sorted(ecoli)
     daily = load_weather(weather_path)
+    upstream_path = Path(args.upstream_weather)
+    upstream = load_weather(upstream_path) if upstream_path.exists() else None
     y = [math.log10(ecoli[d]) for d in dates]
 
-    # 1. Univariate correlations of weather features across lookbacks.
+    # 1. Univariate correlations of weather features across lookbacks. Local
+    #    (Conham) rainfall/temperature, plus upstream (Bath) rainfall if fetched.
+    sources = [("", daily)]
+    if upstream is not None:
+        sources.append(("up_", upstream))
     corr_rows = []
     for lookback in range(1, MAX_LOOKBACK + 1):
-        wf = {d: weather_features(daily, d, lookback) for d in dates}
-        for var, transform in (("rain_sum", "log1p"), ("rain_max", "log1p"), ("temp_mean", None)):
-            xs = [math.log1p(wf[d][var]) if transform == "log1p" else wf[d][var] for d in dates]
-            corr_rows.append({"lookback": lookback, "feature": var, "r": pearson(xs, y)})
+        for prefix, source in sources:
+            wf = {d: weather_features(source, d, lookback) for d in dates}
+            variables = (("rain_sum", "log1p"), ("rain_max", "log1p"))
+            if prefix == "":
+                variables = variables + (("temp_mean", None),)
+            for var, transform in variables:
+                xs = [math.log1p(wf[d][var]) if transform == "log1p" else wf[d][var] for d in dates]
+                corr_rows.append({"lookback": lookback, "feature": prefix + var, "r": pearson(xs, y)})
     corr_rows.sort(key=lambda r: -(abs(r["r"]) if not math.isnan(r["r"]) else -1))
 
+    def best_rain(prefix):
+        cands = [r for r in corr_rows if r["feature"] in (prefix + "rain_sum", prefix + "rain_max")]
+        return max(cands, key=lambda r: abs(r["r"]) if not math.isnan(r["r"]) else -1)
+
     # 2. Build the per-date feature table for the models.
-    best = max(
-        (r for r in corr_rows if r["feature"] in ("rain_sum", "rain_max")),
-        key=lambda r: abs(r["r"]) if not math.isnan(r["r"]) else -1,
-    )
-    rain_lb, rain_var = best["lookback"], best["feature"]
+    local_best = best_rain("")
+    rain_lb, rain_var = local_best["lookback"], local_best["feature"]
+    up_best = best_rain("up_") if upstream is not None else None
     cso = load_cso_feature(Path(args.cso), BEST_CSO_LOOKBACK, BEST_CSO_COLUMN)
     feats = {}
     for d in dates:
@@ -279,38 +310,46 @@ def run_analyze(args) -> int:
             "temp_mean": wf["temp_mean"],
             "cso": math.log1p(cso.get(d, 0.0)),
         }
+        if up_best is not None:
+            uw = weather_features(upstream, d, up_best["lookback"])
+            feats[d]["rain_up"] = math.log1p(uw[up_best["feature"].removeprefix("up_")])
 
     models = {
         "mean baseline": [],
-        f"rainfall only ({rain_var} {rain_lb}d)": ["rain"],
-        "rainfall + temperature": ["rain", "temp_mean"],
+        f"local rainfall only ({rain_var} {rain_lb}d)": ["rain"],
+        "temperature only": ["temp_mean"],
         f"CSO only ({BEST_CSO_COLUMN} {BEST_CSO_LOOKBACK}d)": ["cso"],
-        "CSO + rainfall": ["cso", "rain"],
-        "CSO + rainfall + temperature": ["cso", "rain", "temp_mean"],
+        "CSO + local rainfall": ["cso", "rain"],
     }
+    if up_best is not None:
+        models[f"upstream rainfall only ({up_best['feature']} {up_best['lookback']}d)"] = ["rain_up"]
+        models["CSO + upstream rainfall"] = ["cso", "rain_up"]
+        models["CSO + upstream rainfall + temperature"] = ["cso", "rain_up", "temp_mean"]
     model_results = {}
     for name, names in models.items():
         mae, preds = loocv(dates, ecoli, feats, names, args.ridge)
         model_results[name] = (mae, names, preds)
 
-    combined_name = "CSO + rainfall"
-    _, _, best_preds = model_results[combined_name]
+    # Per-day output uses the best CSO-containing combined model.
+    cso_models = [(mae, name) for name, (mae, _, _) in model_results.items() if name.startswith("CSO +")]
+    featured_name = min(cso_models)[1] if cso_models else next(n for n in model_results if n.startswith("CSO only"))
+    _, _, best_preds = model_results[featured_name]
     predictions, apes = [], []
     for d in dates:
         actual = ecoli[d]
         pred = 10 ** best_preds[d]
         ape = abs(pred - actual) / actual * 100.0
         apes.append(ape)
-        predictions.append(
-            {
-                "sample_date": d,
-                "actual_cfu_per_100ml": round(actual, 1),
-                "rain_mm_window": round(weather_features(daily, d, rain_lb)["rain_sum"], 1),
-                "loocv_predicted_cfu_per_100ml": round(pred, 1),
-                "loocv_signed_pct_error": round((pred - actual) / actual * 100.0, 1),
-                "loocv_abs_pct_error": round(ape, 1),
-            }
-        )
+        row = {
+            "sample_date": d,
+            "actual_cfu_per_100ml": round(actual, 1),
+            "local_rain_mm": round(weather_features(daily, d, rain_lb)["rain_sum"], 1),
+            "upstream_rain_mm": round(weather_features(upstream, d, up_best["lookback"])["rain_sum"], 1) if up_best is not None else "",
+            "loocv_predicted_cfu_per_100ml": round(pred, 1),
+            "loocv_signed_pct_error": round((pred - actual) / actual * 100.0, 1),
+            "loocv_abs_pct_error": round(ape, 1),
+        }
+        predictions.append(row)
     median_ape = sorted(apes)[len(apes) // 2]
 
     out_csv = Path(args.predictions)
@@ -318,41 +357,48 @@ def run_analyze(args) -> int:
     with out_csv.open("w", newline="", encoding="utf-8") as handle:
         writer = csv.DictWriter(
             handle,
-            fieldnames=["sample_date", "actual_cfu_per_100ml", "rain_mm_window", "loocv_predicted_cfu_per_100ml", "loocv_signed_pct_error", "loocv_abs_pct_error"],
+            fieldnames=["sample_date", "actual_cfu_per_100ml", "local_rain_mm", "upstream_rain_mm", "loocv_predicted_cfu_per_100ml", "loocv_signed_pct_error", "loocv_abs_pct_error"],
         )
         writer.writeheader()
         writer.writerows(predictions)
 
-    write_report(Path(args.report), dates, ecoli, daily, corr_rows, rain_lb, rain_var,
-                 model_results, predictions, median_ape)
+    write_report(Path(args.report), dates, ecoli, daily, upstream, corr_rows, rain_lb, rain_var,
+                 up_best, model_results, featured_name, predictions, median_ape)
     print(f"Wrote {out_csv}")
     print(f"Wrote {args.report}")
+    print(f"Upstream rainfall: {'included' if upstream is not None else 'NOT FOUND (' + str(upstream_path) + ')'}")
     print("LOOCV MAE_log by model:")
     for name, (mae, _, _) in model_results.items():
         print(f"  {mae:.3f}  {name}")
     return 0
 
 
-def write_report(path, dates, ecoli, daily, corr_rows, rain_lb, rain_var,
-                 model_results, predictions, median_ape) -> None:
+def write_report(path, dates, ecoli, daily, upstream, corr_rows, rain_lb, rain_var,
+                 up_best, model_results, featured_name, predictions, median_ape) -> None:
+    has_upstream = up_best is not None
     lines = [
         "# Conham E. coli vs weather",
         "",
         "Generated by `scripts/weather_conham_ecoli.py`. Daily rainfall and temperature",
-        "for Conham (Open-Meteo ERA5 archive) summarised over 1- to 7-day windows before",
-        "each E. coli sample, to test whether weather influences water quality on its own",
-        "and on top of the upstream CSO signal.",
+        "summarised over 1- to 7-day windows before each E. coli sample, to test whether",
+        "weather influences water quality on its own and on top of the upstream CSO",
+        "signal. Rainfall is taken both **at Conham** and **upstream at Bath** (~8-9 miles",
+        "up the River Avon, where the spill-driving CSO cluster sits)."
+        if has_upstream else
+        "signal.",
         "",
         f"- Sample dates: {len(dates)}",
+        f"- Upstream (Bath) rainfall: {'included' if has_upstream else 'not available - run fetch'}",
         "",
         "## Which weather features track E. coli?",
         "",
         "Univariate correlation with log10(E. coli). Rainfall is log1p-transformed.",
+        "`up_` features are upstream (Bath) rainfall; the rest are at Conham.",
         "",
         "| Rank | Window | Feature | Pearson r |",
         "|---:|---:|---|---:|",
     ]
-    for i, r in enumerate(corr_rows[:12], 1):
+    for i, r in enumerate(corr_rows[:14], 1):
         rv = "n/a" if math.isnan(r["r"]) else f"{r['r']:+.3f}"
         lines.append(f"| {i} | {r['lookback']}d | {r['feature']} | {rv} |")
     lines.extend(
@@ -369,70 +415,76 @@ def write_report(path, dates, ecoli, daily, corr_rows, rain_lb, rain_var,
     for name, (mae, names, _) in model_results.items():
         lines.append(f"| {name} | {', '.join(names) or 'intercept'} | {mae:.3f} |")
     cso_only = next(m for n, m in model_results.items() if n.startswith("CSO only"))[0]
-    weather_only_models = [m for n, (m, _, _) in model_results.items() if n.startswith("rainfall")]
-    best_weather = min(weather_only_models)
-    best_combined = min(model_results["CSO + rainfall"][0], model_results["CSO + rainfall + temperature"][0])
     mean_base = model_results["mean baseline"][0]
-    top_weather = next(r for r in corr_rows if not math.isnan(r["r"]))
-    weather_helps = best_weather < mean_base - 1e-3
+    best_combined = min((m for n, (m, _, _) in model_results.items() if n.startswith("CSO +")), default=cso_only)
     combined_helps = best_combined < cso_only - 1e-3
+    up_only = next((m for n, (m, _, _) in model_results.items() if n.startswith("upstream rainfall")), None)
+    local_only = next((m for n, (m, _, _) in model_results.items() if n.startswith("local rainfall")), None)
+    up_line = ""
+    if has_upstream and up_only is not None and local_only is not None:
+        up_line = (
+            f" Upstream (Bath) rainfall correlates {'better' if abs(up_best['r']) > 0.2 else 'no better'} "
+            f"than local rain (best up_ r = {up_best['r']:+.3f}); as a sole predictor it scores "
+            f"{up_only:.3f} vs {local_only:.3f} for local rain and {mean_base:.3f} for the mean."
+        )
     lines.extend(
         [
             "",
-            f"**Bottom line: weather adds essentially nothing here.** The strongest single",
-            f"weather signal is {top_weather['feature']} at {top_weather['lookback']}d "
-            f"(r = {top_weather['r']:+.3f}) -- weak, and likely a seasonal proxy "
-            "(colder months ran higher). On cross-validation, the best weather-only model "
-            f"({best_weather:.3f}) is {'better than' if weather_helps else 'no better than'} the "
-            f"mean baseline ({mean_base:.3f}), and adding weather to the CSO model "
-            f"({best_combined:.3f}) {'beats' if combined_helps else 'does not beat'} CSO-only "
-            f"({cso_only:.3f}).",
+            f"**Bottom line: weather still adds little.** Adding the best weather term to the",
+            f"CSO model ({best_combined:.3f}) {'beats' if combined_helps else 'does not beat'} CSO-only "
+            f"({cso_only:.3f}).{up_line}",
             "",
-            "Rainfall in particular is near-useless as a predictor. A plausible reason: the",
-            "spills that drive Conham E. coli are upstream around Bath (~8-9 miles), so they",
-            "track *Bath* rainfall, while this record is rainfall at Conham itself -- the CSO",
-            "spill-hours already encode the relevant upstream rain.",
+            "## Local vs upstream rainfall on the high-E. coli days the CSO model missed",
             "",
-            "## Rainfall on the high-E. coli days the CSO model missed",
+            "Some high-E. coli days had no recorded upstream CSO spill in their window. If",
+            "they were rain-driven runoff we would expect heavy rain. Checking rainfall both",
+            "at Conham and upstream at Bath:",
             "",
-            "The CSO models could not explain some high-E. coli days because no upstream",
-            "spill was recorded in their window. If those were rain-driven runoff we would",
-            "expect heavy local rain -- but they were almost all dry, so rainfall does **not**",
-            "rescue them either:",
-            "",
-            "| Sample date | E. coli | Rain in window (mm) |",
-            "|---|---:|---:|",
+            ("| Sample date | E. coli | Conham rain (mm) | Bath rain (mm) |" if has_upstream
+             else "| Sample date | E. coli | Conham rain (mm) |"),
+            ("|---|---:|---:|---:|" if has_upstream else "|---|---:|---:|"),
         ]
     )
     for d in dates:
         if ecoli[d] >= 450:
-            rain = weather_features(daily, d, rain_lb)["rain_sum"]
-            lines.append(f"| {d} | {ecoli[d]:.0f} | {rain:.1f} |")
+            local_rain = weather_features(daily, d, rain_lb)["rain_sum"]
+            if has_upstream:
+                bath_rain = weather_features(upstream, d, up_best["lookback"])["rain_sum"]
+                lines.append(f"| {d} | {ecoli[d]:.0f} | {local_rain:.1f} | {bath_rain:.1f} |")
+            else:
+                lines.append(f"| {d} | {ecoli[d]:.0f} | {local_rain:.1f} |")
+    rain_cols = "| Sample date | Actual | Conham rain | Bath rain | LOOCV predicted | Signed % error | Abs % error |" if has_upstream \
+        else "| Sample date | Actual | Conham rain | LOOCV predicted | Signed % error | Abs % error |"
+    rain_sep = "|---|---:|---:|---:|---:|---:|---:|" if has_upstream else "|---|---:|---:|---:|---:|---:|"
     lines.extend(
         [
             "",
-            f"(Rainfall window = {rain_lb} days, the most correlated lookback.)",
-            "",
-            "## Per-day percentage error (CSO + rainfall, leave-one-out)",
+            f"## Per-day percentage error ({featured_name}, leave-one-out)",
             "",
             f"Median absolute error **{median_ape:.1f}%**.",
             "",
-            "| Sample date | Actual | Rain (mm) | LOOCV predicted | Signed % error | Abs % error |",
-            "|---|---:|---:|---:|---:|---:|",
+            rain_cols,
+            rain_sep,
         ]
     )
     for p in predictions:
-        lines.append(
-            f"| {p['sample_date']} | {p['actual_cfu_per_100ml']:.0f} | {p['rain_mm_window']:.0f} | "
-            f"{p['loocv_predicted_cfu_per_100ml']:.0f} | {p['loocv_signed_pct_error']:+.1f}% | {p['loocv_abs_pct_error']:.1f}% |"
-        )
+        if has_upstream:
+            lines.append(
+                f"| {p['sample_date']} | {p['actual_cfu_per_100ml']:.0f} | {p['local_rain_mm']:.0f} | {p['upstream_rain_mm']:.0f} | "
+                f"{p['loocv_predicted_cfu_per_100ml']:.0f} | {p['loocv_signed_pct_error']:+.1f}% | {p['loocv_abs_pct_error']:.1f}% |"
+            )
+        else:
+            lines.append(
+                f"| {p['sample_date']} | {p['actual_cfu_per_100ml']:.0f} | {p['local_rain_mm']:.0f} | "
+                f"{p['loocv_predicted_cfu_per_100ml']:.0f} | {p['loocv_signed_pct_error']:+.1f}% | {p['loocv_abs_pct_error']:.1f}% |"
+            )
     lines.extend(
         [
             "",
             "## Caveats",
             "",
-            "- ERA5 is a ~9 km reanalysis grid, not a gauge at Conham; local convective",
-            "  rain can be mis-estimated.",
+            "- ERA5 is a ~9 km reanalysis grid, not a gauge; local convective rain can be",
+            "  mis-estimated at either point.",
             "- Rainfall and CSO spills are strongly related (rain triggers spills), so their",
             "  separate coefficients are hard to interpret; the useful question is whether",
             "  rainfall adds predictive power beyond the CSO signal.",
@@ -453,11 +505,13 @@ def build_parser() -> argparse.ArgumentParser:
     f = sub.add_parser("fetch", help="Fetch daily weather from Open-Meteo (needs network)")
     f.add_argument("--samples", default=SAMPLES_CSV)
     f.add_argument("--weather", default=WEATHER_CSV)
+    f.add_argument("--upstream-weather", default=UPSTREAM_WEATHER_CSV)
     f.set_defaults(func=run_fetch)
 
     a = sub.add_parser("analyze", help="Correlate weather with E. coli and fit combined model (offline)")
     a.add_argument("--samples", default=SAMPLES_CSV)
     a.add_argument("--weather", default=WEATHER_CSV)
+    a.add_argument("--upstream-weather", default=UPSTREAM_WEATHER_CSV)
     a.add_argument("--cso", default=CSO_FEATURES_CSV)
     a.add_argument("--predictions", default=PREDICTIONS_CSV)
     a.add_argument("--report", default=REPORT_MD)

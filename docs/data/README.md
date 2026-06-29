@@ -75,14 +75,17 @@ influence E. coli, on their own and on top of the CSO signal. It pulls a daily
 record for Conham from the Open-Meteo ERA5 historical archive (no API key):
 
 ```bash
-python scripts/weather_conham_ecoli.py fetch     # queries Open-Meteo -> docs/data/conham_weather_daily.csv
+python scripts/weather_conham_ecoli.py fetch     # Open-Meteo -> conham_weather_daily.csv + conham_upstream_weather_daily.csv
 python scripts/weather_conham_ecoli.py analyze   # offline: correlations + combined CSO+weather model
 ```
 
 `fetch` needs outbound access to `archive-api.open-meteo.com`; run it where that
-is allowed and commit `conham_weather_daily.csv`. `analyze` summarises rainfall
+is allowed and commit both `conham_weather_daily.csv` (Conham) and
+`conham_upstream_weather_daily.csv` (Bath, ~8-9 miles upstream where the
+spill-driving CSO cluster sits). `analyze` summarises local and upstream rainfall
 and temperature over 1- to 7-day windows before each sample, ranks them by
 correlation with E. coli, compares leave-one-out cross-validation for
-rainfall-only / CSO-only / combined models, and writes
+rainfall-only (local and upstream) / CSO-only / combined models, and writes
 `docs/data/conham_weather_ecoli_analysis.md` plus
-`docs/data/conham_weather_ecoli_predictions.csv`.
+`docs/data/conham_weather_ecoli_predictions.csv`. If the upstream CSV is absent
+it falls back to Conham-only.
