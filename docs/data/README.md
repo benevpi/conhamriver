@@ -67,3 +67,22 @@ leave-one-out cross-validation, and writes
 `docs/data/conham_ecoli_site_model_predictions.csv`. The band model
 (`scripts/model_conham_ecoli.py` / `conham_ecoli_model.md`) is kept for
 comparison.
+
+## Weather influence
+
+`scripts/weather_conham_ecoli.py` tests whether rainfall and temperature
+influence E. coli, on their own and on top of the CSO signal. It pulls a daily
+record for Conham from the Open-Meteo ERA5 historical archive (no API key):
+
+```bash
+python scripts/weather_conham_ecoli.py fetch     # queries Open-Meteo -> docs/data/conham_weather_daily.csv
+python scripts/weather_conham_ecoli.py analyze   # offline: correlations + combined CSO+weather model
+```
+
+`fetch` needs outbound access to `archive-api.open-meteo.com`; run it where that
+is allowed and commit `conham_weather_daily.csv`. `analyze` summarises rainfall
+and temperature over 1- to 7-day windows before each sample, ranks them by
+correlation with E. coli, compares leave-one-out cross-validation for
+rainfall-only / CSO-only / combined models, and writes
+`docs/data/conham_weather_ecoli_analysis.md` plus
+`docs/data/conham_weather_ecoli_predictions.csv`.
