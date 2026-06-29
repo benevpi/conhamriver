@@ -161,6 +161,7 @@ def main() -> int:
 
     mape = sum(abs_pct_errors) / len(abs_pct_errors)
     median_ape = sorted(abs_pct_errors)[len(abs_pct_errors) // 2]
+    windows_with_spill = sum(1 for r in rows if r["event_count"] > 0)
 
     lines = [
         "# Conham E. coli estimation model",
@@ -200,11 +201,10 @@ def main() -> int:
             "",
             "## Caveats",
             "",
-            "- Only one of the 25 sample windows recorded any upstream CSO spill, so the",
-            "  CSO features carry almost no signal and the regression collapses towards a",
-            "  constant (the geometric-mean E. coli level). The per-day errors therefore",
-            "  mostly measure each day's distance from that typical level, not a genuine",
-            "  CSO effect.",
+            f"- {windows_with_spill} of {len(rows)} sample windows recorded upstream CSO spill",
+            "  activity, so the features carry real but weak signal: more spill events shift",
+            "  the estimate up, yet days with very low actual counts still produce large",
+            "  percentage errors, which inflates the MAPE.",
             "- E. coli values are chart-digitised and capped at 1000 CFU/100ml (right-censored),",
             "  so days at 1000 are under-predicted by construction.",
             "- Errors are in-sample (fit and scored on the same 25 dates); true predictive",

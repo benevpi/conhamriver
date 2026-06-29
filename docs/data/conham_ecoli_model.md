@@ -5,55 +5,54 @@ regression of E. coli on upstream CSO features at a 3-day lookback,
 fit on the 2025 sample dates and scored back on the same dates.
 
 - Samples: 25
-- Mean absolute percentage error (MAPE): 246.9%
-- Median absolute percentage error: 77.6%
+- Mean absolute percentage error (MAPE): 245.6%
+- Median absolute percentage error: 62.6%
 
 ## Model coefficients (standardised features, log10 target)
 
 | Term | Coefficient |
 |---|---:|
 | intercept | 2.2664 |
-| `event_count` | 0.0276 |
-| `spill_hours_total` | 0.0276 |
-| `spill_proximity` | 0.0276 |
+| `event_count` | 0.1896 |
+| `spill_hours_total` | 0.0438 |
+| `spill_proximity` | -0.0415 |
 
 ## Per-day percentage error
 
 | Sample date | Actual | Predicted | Signed % error | Abs % error |
 |---|---:|---:|---:|---:|
-| 2025-05-22 | 10 | 178 | +1676.2% | 1676.2% |
-| 2025-06-17 | 140 | 178 | +26.9% | 26.9% |
-| 2025-07-09 | 85 | 178 | +109.0% | 109.0% |
-| 2025-07-21 | 95 | 178 | +87.0% | 87.0% |
-| 2025-07-26 | 620 | 178 | -71.4% | 71.4% |
-| 2025-08-02 | 85 | 178 | +109.0% | 109.0% |
-| 2025-08-09 | 490 | 178 | -63.8% | 63.8% |
-| 2025-08-16 | 145 | 178 | +22.5% | 22.5% |
-| 2025-08-23 | 20 | 178 | +788.1% | 788.1% |
-| 2025-08-30 | 20 | 178 | +788.1% | 788.1% |
-| 2025-09-06 | 470 | 470 | -0.0% | 0.0% |
-| 2025-09-13 | 1000 | 178 | -82.2% | 82.2% |
-| 2025-09-20 | 100 | 178 | +77.6% | 77.6% |
-| 2025-09-27 | 1000 | 178 | -82.2% | 82.2% |
-| 2025-10-04 | 240 | 178 | -26.0% | 26.0% |
-| 2025-10-11 | 110 | 178 | +61.5% | 61.5% |
-| 2025-10-18 | 220 | 178 | -19.3% | 19.3% |
-| 2025-10-25 | 180 | 178 | -1.3% | 1.3% |
-| 2025-11-01 | 330 | 178 | -46.2% | 46.2% |
-| 2025-11-08 | 370 | 178 | -52.0% | 52.0% |
-| 2025-11-22 | 1000 | 178 | -82.2% | 82.2% |
-| 2025-11-29 | 10 | 178 | +1676.2% | 1676.2% |
-| 2025-12-04 | 450 | 178 | -60.5% | 60.5% |
-| 2025-12-11 | 1000 | 178 | -82.2% | 82.2% |
-| 2025-12-18 | 1000 | 178 | -82.2% | 82.2% |
+| 2025-05-22 | 10 | 141 | +1310.9% | 1310.9% |
+| 2025-06-17 | 140 | 143 | +2.4% | 2.4% |
+| 2025-07-09 | 85 | 138 | +62.9% | 62.9% |
+| 2025-07-21 | 95 | 157 | +65.5% | 65.5% |
+| 2025-07-26 | 620 | 140 | -77.4% | 77.4% |
+| 2025-08-02 | 85 | 138 | +62.6% | 62.6% |
+| 2025-08-09 | 490 | 118 | -75.9% | 75.9% |
+| 2025-08-16 | 145 | 140 | -3.5% | 3.5% |
+| 2025-08-23 | 20 | 140 | +600.0% | 600.0% |
+| 2025-08-30 | 20 | 234 | +1067.8% | 1067.8% |
+| 2025-09-06 | 470 | 221 | -53.0% | 53.0% |
+| 2025-09-13 | 1000 | 335 | -66.5% | 66.5% |
+| 2025-09-20 | 100 | 140 | +40.0% | 40.0% |
+| 2025-09-27 | 1000 | 140 | -86.0% | 86.0% |
+| 2025-10-04 | 240 | 141 | -41.1% | 41.1% |
+| 2025-10-11 | 110 | 140 | +27.3% | 27.3% |
+| 2025-10-18 | 220 | 140 | -36.4% | 36.4% |
+| 2025-10-25 | 180 | 144 | -19.9% | 19.9% |
+| 2025-11-01 | 330 | 174 | -47.4% | 47.4% |
+| 2025-11-08 | 370 | 145 | -60.8% | 60.8% |
+| 2025-11-22 | 1000 | 211 | -78.9% | 78.9% |
+| 2025-11-29 | 10 | 220 | +2102.5% | 2102.5% |
+| 2025-12-04 | 450 | 684 | +51.9% | 51.9% |
+| 2025-12-11 | 1000 | 309 | -69.1% | 69.1% |
+| 2025-12-18 | 1000 | 694 | -30.6% | 30.6% |
 
 ## Caveats
 
-- Only one of the 25 sample windows recorded any upstream CSO spill, so the
-  CSO features carry almost no signal and the regression collapses towards a
-  constant (the geometric-mean E. coli level). The per-day errors therefore
-  mostly measure each day's distance from that typical level, not a genuine
-  CSO effect.
+- 18 of 25 sample windows recorded upstream CSO spill
+  activity, so the features carry real but weak signal: more spill events shift
+  the estimate up, yet days with very low actual counts still produce large
+  percentage errors, which inflates the MAPE.
 - E. coli values are chart-digitised and capped at 1000 CFU/100ml (right-censored),
   so days at 1000 are under-predicted by construction.
 - Errors are in-sample (fit and scored on the same 25 dates); true predictive
