@@ -24,10 +24,12 @@ Notes:
 ## CSO / E. coli exploratory analysis
 
 Run `scripts/analyze_conham_cso_ecoli.py` from the repository root to query the
-same Wessex Water ArcGIS layer and Conham upstream river filters used by
-`poo.py`. The script builds 1- to 7-day lookback windows before each E. coli
-sample date, pages through capped ArcGIS result sets so multi-day windows do not
-silently miss spill records, writes CSO summary features to
+Wessex Water 2025 Event Duration Monitoring ArcGIS dataset and Conham
+watercourse filters used by `poo.py`. The script builds 1- to 7-day lookback
+windows before each E. coli sample date, fetches events whose `EventStart` falls
+within each window, and sums the returned event durations by distance band. It
+pages through capped ArcGIS result sets so multi-day windows do not silently miss
+spill records, writes CSO summary features to
 `docs/data/conham_cso_ecoli_features.csv`, and writes a markdown report of simple
 one-variable log-linear correlations to
 `docs/data/conham_cso_ecoli_analysis.md`.
@@ -40,7 +42,6 @@ python scripts/analyze_conham_cso_ecoli.py
 
 The output includes `queried_feature_count` as a check for how many raw ArcGIS
 features were returned before upstream filtering and de-duplication. The analysis
-is exploratory: the sampling values are approximate/capped, the live
-ArcGIS service may not retain full historical event records, and the simple
-models do not control for rainfall, river flow, sunlight, temperature, sample
-time, or travel time.
+is exploratory: the sampling values are approximate/capped, the EDM dataset is a
+published 2025 snapshot, and the simple models do not control for rainfall,
+river flow, sunlight, temperature, sample time, or travel time.
