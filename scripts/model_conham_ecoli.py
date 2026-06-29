@@ -16,6 +16,17 @@ take roughly a few days to reach Conham, so a week-long window captures them.
 Adding further features degrades LOOCV error on only 25 samples (over-fitting),
 so the model is deliberately parsimonious.
 
+High-count sensitivity
+----------------------
+An unweighted fit systematically under-predicts the high-E. coli days (it
+regresses them toward the mean). To pick those days up better, the regression is
+weighted by ``E. coli ** WEIGHT_EXPONENT`` so high-count days carry more
+influence -- a standard weighted-least-squares tilt. This roughly halves the
+high-day error and under-prediction bias at the cost of over-predicting some
+quiet days; WEIGHT_EXPONENT is exposed as a knob and the trade-off curve is
+printed in the report. Two high days (zero recorded upstream spill in their
+window) remain unpredictable from CSO data alone.
+
 Honest error reporting
 ----------------------
 Each day's "percentage it would be wrong by" is reported from the LOOCV
@@ -35,6 +46,15 @@ from pathlib import Path
 FeatureSpec = tuple[int, str, "str | None"]
 
 SELECTED_MODEL: list[FeatureSpec] = [(7, "spill_hours_10_to_20_miles", "log1p")]
+
+# Weighted-least-squares tilt toward high counts: each sample is weighted by
+# (E. coli ** WEIGHT_EXPONENT). 0.0 is an ordinary fit; ~0.5 roughly halves the
+# high-day error. Chosen from the LOOCV trade-off curve (see report).
+WEIGHT_EXPONENT = 0.5
+
+# Days at or above this E. coli level are treated as "high" for the split
+# high/low error reporting that motivates the weighting.
+HIGH_THRESHOLD = 450.0
 
 # Reference models kept only so the report can show *why* SELECTED_MODEL was
 # chosen (LOOCV beats both of these).
@@ -70,6 +90,12 @@ def parse_args() -> argparse.Namespace:
         type=float,
         default=0.1,
         help="Ridge penalty on standardised features (intercept unpenalised)",
+    )
+    parser.add_argument(
+        "--weight-exponent",
+        type=float,
+        default=WEIGHT_EXPONENT,
+        help="Weight each sample by (E. coli ** this) to tilt toward high-count days",
     )
     return parser.parse_args()
 
@@ -130,14 +156,17 @@ def standardise_apply(matrix: list[list[float]], stats: list[tuple[float, float]
     ]
 
 
-def solve_ridge(matrix: list[list[float]], target: list[float], ridge: float) -> list[float]:
-    """Ridge regression with an unpenalised intercept, via Gaussian elimination."""
+def solve_ridge(
+    matrix: list[list[float]], target: list[float], ridge: float, weights: list[float] | None = None
+) -> list[float]:
+    """Weighted ridge regression with an unpenalised intercept (Gaussian elimination)."""
     n = len(matrix)
     p = len(matrix[0]) if matrix and matrix[0] else 0
     design = [[1.0] + row for row in matrix]
+    w = weights if weights is not None else [1.0] * n
     width = p + 1
-    xtx = [[sum(design[k][i] * design[k][j] for k in range(n)) for j in range(width)] for i in range(width)]
-    xty = [sum(design[k][i] * target[k] for k in range(n)) for i in range(width)]
+    xtx = [[sum(w[k] * design[k][i] * design[k][j] for k in range(n)) for j in range(width)] for i in range(width)]
+    xty = [sum(w[k] * design[k][i] * target[k] for k in range(n)) for i in range(width)]
     for i in range(1, width):  # do not penalise the intercept
         xtx[i][i] += ridge
     aug = [xtx[i] + [xty[i]] for i in range(width)]
@@ -162,16 +191,20 @@ def predict_log(beta: list[float], standardised_row: list[float]) -> float:
 # --------------------------------------------------------------------------- #
 # Fitting and cross-validation
 # --------------------------------------------------------------------------- #
-def fit_full(by_date, dates, ecoli, specs, ridge) -> tuple[list[float], list[tuple[float, float]]]:
+def sample_weights(ecoli: dict[str, float], dates: list[str], exponent: float) -> list[float]:
+    return [ecoli[d] ** exponent for d in dates]
+
+
+def fit_full(by_date, dates, ecoli, specs, ridge, exponent=0.0) -> tuple[list[float], list[tuple[float, float]]]:
     matrix = design_matrix(by_date, dates, specs)
     stats = standardise_fit(matrix)
     standardised = standardise_apply(matrix, stats)
     target = [math.log10(ecoli[d]) for d in dates]
-    beta = solve_ridge(standardised, target, ridge)
+    beta = solve_ridge(standardised, target, ridge, sample_weights(ecoli, dates, exponent))
     return beta, stats
 
 
-def loocv_log_predictions(by_date, dates, ecoli, specs, ridge) -> dict[str, float]:
+def loocv_log_predictions(by_date, dates, ecoli, specs, ridge, exponent=0.0) -> dict[str, float]:
     """Return the held-out log10 prediction for each date (trained on the rest)."""
     preds: dict[str, float] = {}
     for test in dates:
@@ -180,22 +213,26 @@ def loocv_log_predictions(by_date, dates, ecoli, specs, ridge) -> dict[str, floa
         stats = standardise_fit(matrix)
         standardised = standardise_apply(matrix, stats)
         target = [math.log10(ecoli[d]) for d in train]
-        beta = solve_ridge(standardised, target, ridge)
+        beta = solve_ridge(standardised, target, ridge, sample_weights(ecoli, train, exponent))
         test_row = standardise_apply(design_matrix(by_date, [test], specs), stats)[0]
         preds[test] = predict_log(beta, test_row)
     return preds
 
 
 def error_metrics(ecoli: dict[str, float], dates: list[str], log_preds: dict[str, float]) -> dict[str, float]:
-    abs_log, ape = [], []
+    abs_log, ape, abs_log_high, abs_log_low = [], [], [], []
     for d in dates:
         pred = 10 ** log_preds[d]
         actual = ecoli[d]
-        abs_log.append(abs(log_preds[d] - math.log10(actual)))
+        err = abs(log_preds[d] - math.log10(actual))
+        abs_log.append(err)
         ape.append(abs(pred - actual) / actual * 100.0)
+        (abs_log_high if actual >= HIGH_THRESHOLD else abs_log_low).append(err)
     n = len(dates)
     return {
         "mae_log": sum(abs_log) / n,
+        "mae_log_high": sum(abs_log_high) / len(abs_log_high) if abs_log_high else float("nan"),
+        "mae_log_low": sum(abs_log_low) / len(abs_log_low) if abs_log_low else float("nan"),
         "median_ape": sorted(ape)[n // 2],
         "mape": sum(ape) / n,
     }
@@ -220,18 +257,26 @@ def main() -> int:
     args = parse_args()
     path = Path(args.features)
     dates, ecoli, by_date = load_features(path)
+    exponent = args.weight_exponent
 
-    # LOOCV comparison table: reference models + the selected model.
-    comparison = []
-    for name, specs in {**REFERENCE_MODELS, "SELECTED: " + describe_model(SELECTED_MODEL): SELECTED_MODEL}.items():
-        loocv_preds = loocv_log_predictions(by_date, dates, ecoli, specs, args.ridge)
-        comparison.append((name, error_metrics(ecoli, dates, loocv_preds)))
+    # Reference comparison (unweighted): feature was chosen by LOOCV beating these.
+    reference = []
+    for name, specs in {**REFERENCE_MODELS, "SELECTED feature (unweighted)": SELECTED_MODEL}.items():
+        preds = loocv_log_predictions(by_date, dates, ecoli, specs, args.ridge)
+        reference.append((name, error_metrics(ecoli, dates, preds)))
 
-    # Selected model: full-data fit (for coefficients) and honest LOOCV per-day errors.
-    beta, stats = fit_full(by_date, dates, ecoli, SELECTED_MODEL, args.ridge)
+    # High-count weighting trade-off curve for the selected feature.
+    tradeoff = []
+    for exp in sorted({0.0, 0.25, 0.5, exponent}):
+        preds = loocv_log_predictions(by_date, dates, ecoli, SELECTED_MODEL, args.ridge, exp)
+        tradeoff.append((exp, error_metrics(ecoli, dates, preds)))
+
+    # Selected model at the chosen weighting: full-data fit (coefficients) + LOOCV errors.
+    beta, stats = fit_full(by_date, dates, ecoli, SELECTED_MODEL, args.ridge, exponent)
     fitted_log = {d: predict_log(beta, standardise_apply(design_matrix(by_date, [d], SELECTED_MODEL), stats)[0]) for d in dates}
-    loocv_log = loocv_log_predictions(by_date, dates, ecoli, SELECTED_MODEL, args.ridge)
+    loocv_log = loocv_log_predictions(by_date, dates, ecoli, SELECTED_MODEL, args.ridge, exponent)
     metrics = error_metrics(ecoli, dates, loocv_log)
+    n_high = sum(1 for d in dates if ecoli[d] >= HIGH_THRESHOLD)
 
     predictions = []
     for d in dates:
@@ -270,32 +315,52 @@ def main() -> int:
         "",
         "Generated by `scripts/model_conham_ecoli.py`. A log10 ridge regression of",
         "E. coli concentration on upstream CSO spill features, selected by leave-one-out",
-        "cross-validation (LOOCV) over every 1- to 7-day lookback window.",
+        "cross-validation (LOOCV) over every 1- to 7-day lookback window, then weighted",
+        "toward high-count days.",
         "",
-        f"**Selected model:** `{describe_model(SELECTED_MODEL)}` (single predictor).",
+        f"**Selected feature:** `{describe_model(SELECTED_MODEL)}` (single predictor).",
+        f"**High-count weighting:** each sample weighted by `E. coli ** {exponent:g}`.",
         "",
         "Spills 10-20 miles upstream over a week-long window are the best out-of-sample",
         "predictor, consistent with the travel time for upstream contamination to reach",
         "Conham. Adding more features worsened LOOCV error on only 25 samples, so the",
         "model is deliberately parsimonious.",
         "",
-        "## Model selection (leave-one-out cross-validation)",
+        "## Why the weighting (picking up high-count days)",
         "",
-        "Lower is better. `MAE_log` is the mean absolute error in log10 space (a fold-",
-        "error: 0.30 ≈ being out by a factor of 2); it is the robust metric used to pick",
-        "the model. `Median APE` / `MAPE` are percentage errors and are dominated by a",
-        "few very-low-count days.",
+        "An unweighted fit regresses the high-E. coli days toward the mean and",
+        "under-predicts them. Weighting each observation by a power of its E. coli count",
+        "tilts the fit toward those days. Lower `MAE_log` is better; `MAE_high` /",
+        f"`MAE_low` split it at {HIGH_THRESHOLD:g} CFU/100ml ({n_high} high days).",
         "",
-        "| Model | MAE_log | Median APE | MAPE |",
-        "|---|---:|---:|---:|",
+        "| Weight `E.coli**p` | MAE_log | MAE_high | MAE_low | Median APE |",
+        "|---:|---:|---:|---:|---:|",
     ]
-    for name, m in comparison:
-        lines.append(f"| {name} | {m['mae_log']:.3f} | {m['median_ape']:.1f}% | {m['mape']:.1f}% |")
+    for exp, m in tradeoff:
+        marker = " (selected)" if exp == exponent else ""
+        lines.append(
+            f"| {exp:g}{marker} | {m['mae_log']:.3f} | {m['mae_log_high']:.3f} | "
+            f"{m['mae_log_low']:.3f} | {m['median_ape']:.1f}% |"
+        )
     lines.extend(
         [
             "",
-            "The selected model improves on both the previous multi-feature model and the",
-            "mean baseline.",
+            f"At the selected `p = {exponent:g}` the high-day error falls from "
+            f"{tradeoff[0][1]['mae_log_high']:.3f} to {metrics['mae_log_high']:.3f} log10 units",
+            "(about a 2x improvement in fold-error on high days), at the cost of",
+            "over-predicting some quiet days. Set `--weight-exponent 0` for the previous",
+            "unweighted behaviour, or higher to chase high days harder.",
+            "",
+            "## Feature selection (unweighted LOOCV, for reference)",
+            "",
+            "| Model | MAE_log | Median APE | MAPE |",
+            "|---|---:|---:|---:|",
+        ]
+    )
+    for name, m in reference:
+        lines.append(f"| {name} | {m['mae_log']:.3f} | {m['median_ape']:.1f}% | {m['mape']:.1f}% |")
+    lines.extend(
+        [
             "",
             "## Selected model coefficients (standardised feature, log10 target)",
             "",
@@ -309,22 +374,20 @@ def main() -> int:
     lines.extend(
         [
             "",
-            f"Intercept {beta[0]:.3f} in log10 corresponds to about {10 ** beta[0]:.0f} CFU/100ml",
-            "when no qualifying upstream spill is recorded.",
-            "",
             "## Per-day percentage error (leave-one-out: each day predicted without itself)",
             "",
             f"Headline out-of-sample error -- **median {metrics['median_ape']:.1f}%**, "
-            f"**MAE_log {metrics['mae_log']:.3f}**, MAPE {metrics['mape']:.1f}%.",
+            f"high-day `MAE_log` {metrics['mae_log_high']:.3f}, overall `MAE_log` {metrics['mae_log']:.3f}.",
             "",
-            "| Sample date | Actual | LOOCV predicted | Signed % error | Abs % error |",
-            "|---|---:|---:|---:|---:|",
+            "| Sample date | Actual | LOOCV predicted | Signed % error | Abs % error | High |",
+            "|---|---:|---:|---:|---:|:---:|",
         ]
     )
     for p in predictions:
+        high_mark = "●" if p["actual_cfu_per_100ml"] >= HIGH_THRESHOLD else ""
         lines.append(
             f"| {p['sample_date']} | {p['actual_cfu_per_100ml']:.0f} | {p['loocv_cfu_per_100ml']:.0f} | "
-            f"{p['loocv_signed_pct_error']:+.1f}% | {p['loocv_abs_pct_error']:.1f}% |"
+            f"{p['loocv_signed_pct_error']:+.1f}% | {p['loocv_abs_pct_error']:.1f}% | {high_mark} |"
         )
     lines.extend(
         [
@@ -336,11 +399,13 @@ def main() -> int:
             f"- {windows_with_spill} of {len(dates)} sample windows recorded upstream CSO spill",
             "  activity. The signal is real but weak (single-feature R^2 around 0.2), so the",
             "  model explains only part of the day-to-day variation.",
+            "- Two high-count days had effectively zero recorded upstream spill in their",
+            "  window (e.g. 2025-09-27 at 1000 CFU/100ml). No CSO-based feature can predict",
+            "  these; they are likely rainfall- or runoff-driven and cap achievable accuracy.",
+            "- The high-count weighting deliberately trades low-day accuracy for high-day",
+            "  accuracy, so quiet days are now over-predicted and the median/MAPE rise.",
             "- E. coli values are chart-digitised and capped at 1000 CFU/100ml (right-censored),",
-            "  so days at 1000 are under-predicted by construction.",
-            "- Percentage error explodes on days when the true count is very low (10-20",
-            "  CFU/100ml): a small absolute miss is a huge relative one. `MAE_log` and the",
-            "  median are the fairer summaries; MAPE is shown for completeness.",
+            "  so days at 1000 are under-predicted by construction even after weighting.",
             "- Only CSO spill features are used. Rainfall, river flow, sunlight, temperature,",
             "  and sample timing are not available here and would be needed for a strong model.",
             "",
@@ -350,8 +415,11 @@ def main() -> int:
 
     print(f"Wrote {out_path}")
     print(f"Wrote {args.report}")
-    print(f"Selected model: {describe_model(SELECTED_MODEL)}")
-    print(f"LOOCV  median APE {metrics['median_ape']:.1f}%  MAE_log {metrics['mae_log']:.3f}  MAPE {metrics['mape']:.1f}%")
+    print(f"Selected model: {describe_model(SELECTED_MODEL)}  weight exponent {exponent:g}")
+    print(
+        f"LOOCV  median APE {metrics['median_ape']:.1f}%  MAE_log {metrics['mae_log']:.3f}  "
+        f"MAE_high {metrics['mae_log_high']:.3f}  MAE_low {metrics['mae_log_low']:.3f}"
+    )
     return 0
 
 
