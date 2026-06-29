@@ -422,10 +422,12 @@ def write_report(path, dates, ecoli, daily, upstream, corr_rows, rain_lb, rain_v
     local_only = next((m for n, (m, _, _) in model_results.items() if n.startswith("local rainfall")), None)
     up_line = ""
     if has_upstream and up_only is not None and local_only is not None:
+        up_helps = up_only < mean_base - 1e-3
         up_line = (
-            f" Upstream (Bath) rainfall correlates {'better' if abs(up_best['r']) > 0.2 else 'no better'} "
-            f"than local rain (best up_ r = {up_best['r']:+.3f}); as a sole predictor it scores "
-            f"{up_only:.3f} vs {local_only:.3f} for local rain and {mean_base:.3f} for the mean."
+            f" Moving rainfall upstream to Bath does **not** rescue it: the best upstream rain"
+            f" term (up_ r = {up_best['r']:+.3f}, weak and the wrong sign) scores {up_only:.3f}"
+            f" as a sole predictor -- {'better than' if up_helps else 'still no better than'} the"
+            f" mean ({mean_base:.3f}) and about the same as local rain ({local_only:.3f})."
         )
     lines.extend(
         [
@@ -484,7 +486,10 @@ def write_report(path, dates, ecoli, daily, upstream, corr_rows, rain_lb, rain_v
             "## Caveats",
             "",
             "- ERA5 is a ~9 km reanalysis grid, not a gauge; local convective rain can be",
-            "  mis-estimated at either point.",
+            "  mis-estimated at either point. Note some high-spill days show ~0 mm here,",
+            "  which is suspicious -- either the grid misses the rain or those spills are not",
+            "  rainfall-driven (e.g. groundwater infiltration), so the rainfall signal may be",
+            "  understated.",
             "- Rainfall and CSO spills are strongly related (rain triggers spills), so their",
             "  separate coefficients are hard to interpret; the useful question is whether",
             "  rainfall adds predictive power beyond the CSO signal.",
