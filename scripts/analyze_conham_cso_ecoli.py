@@ -201,7 +201,10 @@ def model_table(rows: list[dict[str, object]]) -> list[dict[str, float | int | s
             r_value = pearson(x, y)
             rho = pearson(ranks(x), ranks(y))
             results.append({"lookback_days": lag, "feature": candidate, "n": len(lag_rows), "pearson_r": r_value, "r_squared": r_value * r_value if not math.isnan(r_value) else float("nan"), "spearman_rho": rho})
-    return sorted(results, key=lambda r: (-1 if math.isnan(float(r["r_squared"])) else -float(r["r_squared"]), r["lookback_days"], str(r["feature"])))
+    # Sort by descending R². R² lies in [0, 1], so -R² lies in [-1, 0]; use a
+    # positive sentinel for undefined (NaN) correlations so degenerate features
+    # with no variation sort to the bottom instead of tying with a perfect fit.
+    return sorted(results, key=lambda r: (1.0 if math.isnan(float(r["r_squared"])) else -float(r["r_squared"]), r["lookback_days"], str(r["feature"])))
 
 
 def write_report(path: Path, rows: list[dict[str, object]], models: list[dict[str, object]]) -> None:
