@@ -1,11 +1,12 @@
 #!/usr/bin/env python3
 """Analyse whether upstream CSO activity is associated with Conham E. coli samples.
 
-Uses the same Wessex Water ArcGIS FeatureServer and Conham river/upstream query
-logic as ``poo.py``. For every E. coli sample date in the CSV, it queries CSO
+Uses the Wessex Water Event Duration Monitoring 2025 ArcGIS FeatureServer with
+the Conham watercourse query logic from ``poo.py``. For every E. coli sample date
+in the CSV, it queries CSO
 activity in 1- to 7-day lookback windows ending at the sample date, summarises
-upstream spill duration by distance band, and fits simple one-variable OLS models
-against log10(E. coli CFU/100ml).
+spill duration by distance band, and fits simple one-variable OLS models against
+log10(E. coli CFU/100ml).
 
 The script intentionally uses only the Python standard library.
 """
@@ -24,7 +25,7 @@ from datetime import date, datetime, time as dt_time, timedelta, timezone
 from pathlib import Path
 from typing import Iterable
 
-ARCGIS_QUERY_URL = "https://services.arcgis.com/3SZ6e0uCvPROr4mS/ArcGIS/rest/services/Wessex_Water_Storm_Overflow_Activity/FeatureServer/0/query"
+ARCGIS_QUERY_URL = "https://services.arcgis.com/3SZ6e0uCvPROr4mS/arcgis/rest/services/Wessex_Water_Event_Duration_Monitoring_2025_view/FeatureServer/0/query"
 CONHAM_RIVERS = [
     "RIVER AVON",
     "RIVER CHEW",
@@ -58,10 +59,6 @@ def haversine(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
     return radius_miles * 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
 
 
-def is_upstream_conham(lat: float, lon: float) -> bool:
-    return lon > CONHAM_LON
-
-
 def ms_to_datetime(value: int | float | None) -> datetime | None:
     # ArcGIS date fields are epoch milliseconds. Some feeds use 0 for
     # open/unknown end times, so treat both None and 0 as missing.
@@ -84,14 +81,10 @@ def read_samples(path: Path) -> list[dict[str, object]]:
 
 
 def arcgis_where(start: datetime, end: datetime) -> str:
-    river_clause = " OR ".join(f"ReceivingWaterCourse = '{river}'" for river in CONHAM_RIVERS)
+    river_clause = " OR ".join(f"ReceivingWatercourse = '{river}'" for river in CONHAM_RIVERS)
     start_s = start.strftime("%Y-%m-%d %H:%M:%S")
     end_s = end.strftime("%Y-%m-%d %H:%M:%S")
-    return (
-        f"({river_clause}) AND "
-        f"LatestEventStart <= DATE '{end_s}' AND "
-        f"(LatestEventEnd >= DATE '{start_s}' OR LatestEventEnd IS NULL)"
-    )
+    return f"({river_clause}) AND EventStart >= DATE '{start_s}' AND EventStart < DATE '{end_s}'"
 
 
 def fetch_page(params: dict[str, str]) -> dict[str, object]:
@@ -111,8 +104,8 @@ def fetch_features(start: datetime, end: datetime, page_size: int, sleep_seconds
     while True:
         params = {
             "where": arcgis_where(start, end),
-            "outFields": "Id,Company,Status,StatusStart,LatestEventStart,LatestEventEnd,Latitude,Longitude,ReceivingWaterCourse,LastUpdated",
-            "orderByFields": "LatestEventStart DESC",
+            "outFields": "SiteId,SiteName,ReceivingWatercourse,EventId,EventStart,EventEnd,Duration,OutfallLatitude,OutfallLongitude",
+            "orderByFields": "EventStart ASC",
             "f": "json",
             "resultRecordCount": str(page_size),
             "resultOffset": str(offset),
@@ -138,21 +131,17 @@ def summarise_window(features: Iterable[dict[str, object]], start: datetime, end
     for feature in features:
         summary["queried_feature_count"] = int(summary["queried_feature_count"]) + 1
         attrs = feature.get("attributes", {})  # type: ignore[assignment]
-        lat = attrs.get("Latitude")
-        lon = attrs.get("Longitude")
-        event_start = ms_to_datetime(attrs.get("LatestEventStart"))
-        event_end = ms_to_datetime(attrs.get("LatestEventEnd")) or end
-        if lat is None or lon is None or event_start is None or not is_upstream_conham(float(lat), float(lon)):
+        lat = attrs.get("OutfallLatitude")
+        lon = attrs.get("OutfallLongitude")
+        event_start = ms_to_datetime(attrs.get("EventStart"))
+        event_end = ms_to_datetime(attrs.get("EventEnd"))
+        if lat is None or lon is None or event_start is None or event_end is None:
             continue
-        clipped_start = max(start, event_start)
-        clipped_end = min(end, event_end)
-        if clipped_end <= clipped_start:
-            continue
-        key = (attrs.get("Id"), attrs.get("LatestEventStart"), attrs.get("LatestEventEnd"))
+        key = (attrs.get("EventId") or attrs.get("SiteId"), attrs.get("EventStart"), attrs.get("EventEnd"))
         if key in seen:
             continue
         seen.add(key)
-        duration_hours = (clipped_end - clipped_start).total_seconds() / 3600
+        duration_hours = (event_end - event_start).total_seconds() / 3600
         distance = haversine(CONHAM_LAT, CONHAM_LON, float(lat), float(lon))
         nearest = distance if nearest is None else min(nearest, distance)
         summary["event_count"] = int(summary["event_count"]) + 1
@@ -209,10 +198,29 @@ def model_table(rows: list[dict[str, object]]) -> list[dict[str, float | int | s
 
 def write_report(path: Path, rows: list[dict[str, object]], models: list[dict[str, object]]) -> None:
     top = models[:10]
-    lines = ["# Conham CSO / E. coli exploratory analysis", "", "This report is generated from `scripts/analyze_conham_cso_ecoli.py` using the Wessex Water ArcGIS query pattern from `poo.py` and the Conham E. coli sampling CSV.", "", f"Sample dates analysed: {len({r['sample_date'] for r in rows})}", "", "## Best one-variable log-linear associations", "", "| Rank | Lookback days | Feature | n | Pearson r | R² | Spearman ρ |", "|---:|---:|---|---:|---:|---:|---:|"]
+    lines = [
+        "# Conham CSO / E. coli exploratory analysis",
+        "",
+        "This report is generated from `scripts/analyze_conham_cso_ecoli.py` using the Wessex Water 2025 Event Duration Monitoring ArcGIS dataset and the Conham E. coli sampling CSV.",
+        "",
+        f"Sample dates analysed: {len({r['sample_date'] for r in rows})}",
+        "",
+        "## Best one-variable log-linear associations",
+        "",
+        "| Rank | Lookback days | Feature | n | Pearson r | R^2 | Spearman rho |",
+        "|---:|---:|---|---:|---:|---:|---:|",
+    ]
     for i, row in enumerate(top, 1):
         lines.append(f"| {i} | {row['lookback_days']} | `{row['feature']}` | {row['n']} | {float(row['pearson_r']):.3f} | {float(row['r_squared']):.3f} | {float(row['spearman_rho']):.3f} |")
-    lines.extend(["", "## Interpretation cautions", "", "- The E. coli values are chart-digitised approximations and capped values at 1000 CFU/100ml are right-censored.", "- The ArcGIS live layer may expose only each monitor's latest event; if so, historical windows can be incomplete unless the service retains older events.", "- These are simple exploratory correlations, not causal models. Rainfall, river flow, sunlight, temperature, sample time, and travel time are not controlled here.", ""])
+    lines.extend([
+        "",
+        "## Interpretation cautions",
+        "",
+        "- The E. coli values are chart-digitised approximations and capped values at 1000 CFU/100ml are right-censored.",
+        "- The CSO query uses Wessex Water's static 2025 Event Duration Monitoring dataset, bounded to the selected 1- to 7-day lookback window before each sample.",
+        "- These are simple exploratory correlations, not causal models. Rainfall, river flow, sunlight, temperature, sample time, and travel time are not controlled here.",
+        "",
+    ])
     path.write_text("\n".join(lines), encoding="utf-8")
 
 
