@@ -44,7 +44,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--input", default="docs/data/conham_sampling_2025_2026_e_coli.csv", help="E. coli sampling CSV")
     parser.add_argument("--summary-csv", default="docs/data/conham_cso_ecoli_features.csv", help="Output CSV of sample-window CSO features")
     parser.add_argument("--report", default="docs/data/conham_cso_ecoli_analysis.md", help="Output markdown report")
-    parser.add_argument("--sleep", type=float, default=0.1, help="Delay between ArcGIS requests")
+    parser.add_argument("--sleep", type=float, default=0.1, help="Delay between ArcGIS page requests")
+    parser.add_argument("--page-size", type=int, default=2000, help="ArcGIS records to request per page")
     return parser.parse_args()
 
 
@@ -62,7 +63,9 @@ def is_upstream_conham(lat: float, lon: float) -> bool:
 
 
 def ms_to_datetime(value: int | float | None) -> datetime | None:
-    if value is None:
+    # ArcGIS date fields are epoch milliseconds. Some feeds use 0 for
+    # open/unknown end times, so treat both None and 0 as missing.
+    if value in (None, 0):
         return None
     return datetime.fromtimestamp(value / 1000, tz=timezone.utc)
 
@@ -91,28 +94,49 @@ def arcgis_where(start: datetime, end: datetime) -> str:
     )
 
 
-def fetch_features(start: datetime, end: datetime) -> list[dict[str, object]]:
-    params = {
-        "where": arcgis_where(start, end),
-        "outFields": "Id,Company,Status,StatusStart,LatestEventStart,LatestEventEnd,Latitude,Longitude,ReceivingWaterCourse,LastUpdated",
-        "orderByFields": "LatestEventStart DESC",
-        "f": "json",
-        "resultRecordCount": "1000",
-    }
+def fetch_page(params: dict[str, str]) -> dict[str, object]:
     url = ARCGIS_QUERY_URL + "?" + urllib.parse.urlencode(params)
     with urllib.request.urlopen(url, timeout=30) as response:
         data = json.load(response)
     if "error" in data:
         raise RuntimeError(json.dumps(data["error"], indent=2))
-    return data.get("features", [])
+    return data
+
+
+def fetch_features(start: datetime, end: datetime, page_size: int, sleep_seconds: float) -> list[dict[str, object]]:
+    # ArcGIS services cap a single query response. Page through the result set so
+    # multi-day windows do not silently miss older records after the first page.
+    features: list[dict[str, object]] = []
+    offset = 0
+    while True:
+        params = {
+            "where": arcgis_where(start, end),
+            "outFields": "Id,Company,Status,StatusStart,LatestEventStart,LatestEventEnd,Latitude,Longitude,ReceivingWaterCourse,LastUpdated",
+            "orderByFields": "LatestEventStart DESC",
+            "f": "json",
+            "resultRecordCount": str(page_size),
+            "resultOffset": str(offset),
+            "returnExceededLimitFeatures": "true",
+        }
+        data = fetch_page(params)
+        page = data.get("features", [])
+        if not isinstance(page, list):
+            raise RuntimeError("ArcGIS response did not contain a feature list")
+        features.extend(page)
+        if len(page) < page_size or not data.get("exceededTransferLimit"):
+            break
+        offset += page_size
+        time.sleep(sleep_seconds)
+    return features
 
 
 def summarise_window(features: Iterable[dict[str, object]], start: datetime, end: datetime) -> dict[str, float | int | str]:
     summary: dict[str, float | int | str] = {f"spill_hours_{label}": 0.0 for _, _, label in BANDS}
-    summary.update({"event_count": 0, "spill_hours_total": 0.0, "nearest_spill_miles": ""})
+    summary.update({"queried_feature_count": 0, "event_count": 0, "spill_hours_total": 0.0, "nearest_spill_miles": ""})
     nearest: float | None = None
     seen: set[tuple[object, object, object]] = set()
     for feature in features:
+        summary["queried_feature_count"] = int(summary["queried_feature_count"]) + 1
         attrs = feature.get("attributes", {})  # type: ignore[assignment]
         lat = attrs.get("Latitude")
         lon = attrs.get("Longitude")
@@ -197,7 +221,7 @@ def main() -> int:
         sample_end = datetime.combine(sample["sample_date"], dt_time.min, tzinfo=timezone.utc)  # type: ignore[arg-type]
         for lookback in range(1, 8):
             window_start = sample_end - timedelta(days=lookback)
-            features = fetch_features(window_start, sample_end)
+            features = fetch_features(window_start, sample_end, args.page_size, args.sleep)
             summary = summarise_window(features, window_start, sample_end)
             rows.append({**sample, "lookback_days": lookback, **summary})
             time.sleep(args.sleep)

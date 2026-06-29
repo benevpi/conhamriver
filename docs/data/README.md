@@ -26,7 +26,8 @@ Notes:
 Run `scripts/analyze_conham_cso_ecoli.py` from the repository root to query the
 same Wessex Water ArcGIS layer and Conham upstream river filters used by
 `poo.py`. The script builds 1- to 7-day lookback windows before each E. coli
-sample date, writes CSO summary features to
+sample date, pages through capped ArcGIS result sets so multi-day windows do not
+silently miss spill records, writes CSO summary features to
 `docs/data/conham_cso_ecoli_features.csv`, and writes a markdown report of simple
 one-variable log-linear correlations to
 `docs/data/conham_cso_ecoli_analysis.md`.
@@ -37,7 +38,9 @@ Example:
 python scripts/analyze_conham_cso_ecoli.py
 ```
 
-The analysis is exploratory: the sampling values are approximate/capped, the live
+The output includes `queried_feature_count` as a check for how many raw ArcGIS
+features were returned before upstream filtering and de-duplication. The analysis
+is exploratory: the sampling values are approximate/capped, the live
 ArcGIS service may not retain full historical event records, and the simple
 models do not control for rainfall, river flow, sunlight, temperature, sample
 time, or travel time.
