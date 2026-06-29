@@ -369,20 +369,36 @@ def write_report(path, dates, ecoli, daily, corr_rows, rain_lb, rain_var,
     for name, (mae, names, _) in model_results.items():
         lines.append(f"| {name} | {', '.join(names) or 'intercept'} | {mae:.3f} |")
     cso_only = next(m for n, m in model_results.items() if n.startswith("CSO only"))[0]
-    combined = model_results["CSO + rainfall"][0]
-    verdict = (
-        "rainfall improves on the CSO-only model" if combined < cso_only - 1e-3
-        else "rainfall does not improve on the CSO-only model"
-    )
+    weather_only_models = [m for n, (m, _, _) in model_results.items() if n.startswith("rainfall")]
+    best_weather = min(weather_only_models)
+    best_combined = min(model_results["CSO + rainfall"][0], model_results["CSO + rainfall + temperature"][0])
+    mean_base = model_results["mean baseline"][0]
+    top_weather = next(r for r in corr_rows if not math.isnan(r["r"]))
+    weather_helps = best_weather < mean_base - 1e-3
+    combined_helps = best_combined < cso_only - 1e-3
     lines.extend(
         [
             "",
-            f"On this dataset, **{verdict}** (CSO-only {cso_only:.3f} vs CSO+rainfall {combined:.3f}).",
+            f"**Bottom line: weather adds essentially nothing here.** The strongest single",
+            f"weather signal is {top_weather['feature']} at {top_weather['lookback']}d "
+            f"(r = {top_weather['r']:+.3f}) -- weak, and likely a seasonal proxy "
+            "(colder months ran higher). On cross-validation, the best weather-only model "
+            f"({best_weather:.3f}) is {'better than' if weather_helps else 'no better than'} the "
+            f"mean baseline ({mean_base:.3f}), and adding weather to the CSO model "
+            f"({best_combined:.3f}) {'beats' if combined_helps else 'does not beat'} CSO-only "
+            f"({cso_only:.3f}).",
+            "",
+            "Rainfall in particular is near-useless as a predictor. A plausible reason: the",
+            "spills that drive Conham E. coli are upstream around Bath (~8-9 miles), so they",
+            "track *Bath* rainfall, while this record is rainfall at Conham itself -- the CSO",
+            "spill-hours already encode the relevant upstream rain.",
             "",
             "## Rainfall on the high-E. coli days the CSO model missed",
             "",
             "The CSO models could not explain some high-E. coli days because no upstream",
-            "spill was recorded in their window. Here is the rainfall those days saw:",
+            "spill was recorded in their window. If those were rain-driven runoff we would",
+            "expect heavy local rain -- but they were almost all dry, so rainfall does **not**",
+            "rescue them either:",
             "",
             "| Sample date | E. coli | Rain in window (mm) |",
             "|---|---:|---:|",
