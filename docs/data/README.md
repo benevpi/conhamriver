@@ -45,3 +45,25 @@ features were returned before upstream filtering and de-duplication. The analysi
 is exploratory: the sampling values are approximate/capped, the EDM dataset is a
 published 2025 snapshot, and the simple models do not control for rainfall,
 river flow, sunlight, temperature, sample time, or travel time.
+
+## Per-outfall E. coli model
+
+`scripts/model_conham_ecoli_by_site.py` builds a model from **individual CSO
+outfalls** instead of distance bands, to see which specific outfalls track E.
+coli at Conham. It uses the same Event Duration Monitoring 2025 ArcGIS view as
+`analyze_conham_cso_ecoli.py`. It runs in two steps so the network query and the
+modelling are independent:
+
+```bash
+python scripts/model_conham_ecoli_by_site.py fetch   # queries ArcGIS -> docs/data/conham_cso_site_features.csv
+python scripts/model_conham_ecoli_by_site.py model   # offline: ranking + LOOCV model
+```
+
+`fetch` needs outbound access to `services.arcgis.com`; run it where that is
+allowed and commit `conham_cso_site_features.csv`. `model` then ranks outfalls by
+their univariate correlation with E. coli, forward-selects a small set by
+leave-one-out cross-validation, and writes
+`docs/data/conham_ecoli_site_model.md` plus
+`docs/data/conham_ecoli_site_model_predictions.csv`. The band model
+(`scripts/model_conham_ecoli.py` / `conham_ecoli_model.md`) is kept for
+comparison.
