@@ -20,3 +20,24 @@ Notes:
   - `intestinal_enterococci_cfu_per_100ml`: intestinal enterococci concentration in CFU/100ml.
   - `value_note`: caveats for capped values.
   - `source`: source web page for the graph.
+
+## CSO / E. coli exploratory analysis
+
+Run `scripts/analyze_conham_cso_ecoli.py` from the repository root to query the
+same Wessex Water ArcGIS layer and Conham upstream river filters used by
+`poo.py`. The script builds 1- to 7-day lookback windows before each E. coli
+sample date, writes CSO summary features to
+`docs/data/conham_cso_ecoli_features.csv`, and writes a markdown report of simple
+one-variable log-linear correlations to
+`docs/data/conham_cso_ecoli_analysis.md`.
+
+Example:
+
+```bash
+python scripts/analyze_conham_cso_ecoli.py
+```
+
+The analysis is exploratory: the sampling values are approximate/capped, the live
+ArcGIS service may not retain full historical event records, and the simple
+models do not control for rainfall, river flow, sunlight, temperature, sample
+time, or travel time.
