@@ -89,3 +89,26 @@ rainfall-only (local and upstream) / CSO-only / combined models, and writes
 `docs/data/conham_weather_ecoli_analysis.md` plus
 `docs/data/conham_weather_ecoli_predictions.csv`. If the upstream CSV is absent
 it falls back to Conham-only.
+
+## Per-day model comparison
+
+`scripts/compare_conham_models.py` reads the leave-one-out prediction CSVs from
+all three models and writes a single per-day side-by-side table to
+`docs/data/conham_ecoli_model_comparison.{md,csv}`. Run it after the models.
+
+## Nearby-CSO investigation (other watercourses)
+
+The models above only see outfalls on seven hard-coded Conham watercourses.
+`scripts/investigate_nearby_csos.py` widens the net to find CSOs on *any*
+watercourse that could explain the unexplained high-E. coli days:
+
+```bash
+python scripts/investigate_nearby_csos.py fetch    # ArcGIS by geography -> docs/data/conham_nearby_cso_events.csv
+python scripts/investigate_nearby_csos.py report   # offline: which nearby outfalls spilled before each spike
+```
+
+`fetch` queries the EDM 2025 view by bounding box (no watercourse-name filter)
+and needs `services.arcgis.com` egress; commit `conham_nearby_cso_events.csv`,
+then `report` lists, for each high-E. coli day, the upstream outfalls that
+spilled in the prior 7 days, flagging those on watercourses outside the existing
+filter. Output: `docs/data/conham_nearby_cso_investigation.md`.
