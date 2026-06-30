@@ -129,6 +129,11 @@ def run_fetch(args) -> int:
         if lat is None or lon is None:
             continue
         wc = (a.get("ReceivingWatercourse") or "").strip()
+        start_dt = ms_to_dt(a.get("EventStart"))
+        end_dt = ms_to_dt(a.get("EventEnd"))
+        # Derive duration from the timestamps; the EDM `Duration` field is an
+        # unreliable string with an ambiguous unit, so do not trust it.
+        duration_hours = round((end_dt - start_dt).total_seconds() / 3600, 2) if start_dt and end_dt else ""
         rows.append({
             "site_id": a.get("SiteId"),
             "site_name": a.get("SiteName"),
@@ -138,9 +143,9 @@ def run_fetch(args) -> int:
             "outfall_lon": lon,
             "distance_miles": round(haversine(CONHAM_LAT, CONHAM_LON, float(lat), float(lon)), 3),
             "upstream": float(lon) > CONHAM_LON,
-            "event_start": (ms_to_dt(a.get("EventStart")) or "").isoformat() if ms_to_dt(a.get("EventStart")) else "",
-            "event_end": (ms_to_dt(a.get("EventEnd")) or "").isoformat() if ms_to_dt(a.get("EventEnd")) else "",
-            "duration_hours": round((a.get("Duration") or 0) / 60, 2) if a.get("Duration") else "",
+            "event_start": start_dt.isoformat() if start_dt else "",
+            "event_end": end_dt.isoformat() if end_dt else "",
+            "duration_hours": duration_hours,
         })
     out = Path(args.events)
     out.parent.mkdir(parents=True, exist_ok=True)
