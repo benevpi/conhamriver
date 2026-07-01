@@ -1,0 +1,135 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <title>How the water-quality prediction works</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body class="theme-ocean">
+<h1>How the predicted water quality works</h1>
+<div><a href="index.html">Back to home page</a></div>
+
+<p>
+    Each report shows a <strong>predicted bathing-water quality</strong> &mdash; Excellent,
+    Good, Sufficient or Poor &mdash; alongside the existing risk level. This page explains
+    what that prediction means, how it is calculated, and (importantly) what it can and
+    cannot tell you.
+</p>
+
+<h2>The categories</h2>
+<p>These are the UK inland bathing-water bands for <em>E. coli</em> (CFU/100&nbsp;ml):</p>
+<table>
+    <tr><th>Category</th><th>E. coli level</th></tr>
+    <tr><td class="quality-excellent">Excellent</td><td>&le; 500</td></tr>
+    <tr><td class="quality-good">Good</td><td>&le; 1000</td></tr>
+    <tr><td class="quality-sufficient">Sufficient</td><td>&le; 900 (90th percentile basis)</td></tr>
+    <tr><td class="quality-poor">Poor</td><td>exceeds the Sufficient level</td></tr>
+</table>
+<p>
+    Officially these bands are assessed from percentiles of a whole season's samples, not
+    a single reading. Here we apply the same boundary values to a single <em>predicted</em>
+    concentration, as a simplification, so the wording matches what people recognise.
+</p>
+
+<h2>How the prediction is made</h2>
+<p>
+    The prediction is driven by the two things this tool can see in near real time:
+</p>
+<ul>
+    <li><strong>Upstream storm-overflow (CSO) spilling</strong> &mdash; the total number of
+        hours that monitored overflows upstream (within about 20 miles) have been spilling
+        over the last 7 days.</li>
+    <li><strong>Recent rainfall</strong> &mdash; roughly the last three days of rain at the
+        site.</li>
+</ul>
+<p>The category is then set as follows:</p>
+<table>
+    <tr><th>Upstream spilling (last 7 days)</th><th>Base prediction</th></tr>
+    <tr><td>under 15 hours</td><td class="quality-excellent">Excellent</td></tr>
+    <tr><td>15 to 100 hours</td><td class="quality-good">Good</td></tr>
+    <tr><td>100 to 500 hours</td><td class="quality-sufficient">Sufficient</td></tr>
+    <tr><td>500 hours or more</td><td class="quality-poor">Poor</td></tr>
+</table>
+<p>
+    If there has also been <strong>heavy recent rain (20&nbsp;mm or more in ~3 days)</strong>,
+    the prediction is bumped one category worse, to account for rainfall-driven contamination
+    (agricultural and urban run-off) that the overflow data does not capture.
+</p>
+
+<h2>The three-day forecast</h2>
+<p>
+    Each report also shows a <strong>three-day outlook</strong>. Rain is the only
+    thing we can see coming, and rain is what triggers the storm overflows, so the
+    forecast is rain-driven. It starts from the current level of upstream spilling
+    and then steps the category <em>worse</em> as forecast rain accumulates:
+    roughly, more than 8&nbsp;mm of rain (counting from now) nudges it one category
+    worse, more than 20&nbsp;mm two, and more than 40&nbsp;mm three. If the forecast
+    is dry, the outlook simply holds at the current spill-based level.
+</p>
+<p>
+    It is deliberately cautious &mdash; it assumes forecast rain will cause
+    spilling and does not assume the river cleans up quickly &mdash; so treat it as
+    a "could get this bad", not a promise. It is only as good as the rain forecast.
+</p>
+
+<h2>Why this model, and not a regression?</h2>
+<p>
+    We looked hard at the historical data for Conham &mdash; 25 digitised <em>E. coli</em>
+    samples from the 2025 sampling programme, matched against upstream CSO spill records
+    (Wessex Water's Event Duration Monitoring) and daily rainfall. Two findings shaped the
+    design:
+</p>
+<ol>
+    <li>
+        <strong>CSO spilling is the best available predictor, but the relationship is weak
+        and noisy.</strong> Upstream spill hours beat rainfall, individual outfalls, and
+        several other features in cross-validation &mdash; but the correlation is modest.
+        Rainfall on its own adds almost nothing once spilling is known.
+    </li>
+    <li>
+        <strong>A straight regression would be unsafe here.</strong> The lab caps readings
+        at 1000, so the worst days are "censored", and with a weak signal a least-squares
+        model pulls every estimate towards the average. Fitted honestly, it predicts
+        "Excellent" for <em>every</em> day &mdash; including the days that actually hit the
+        1000 ceiling. A model that always says "fine" is worse than useless for a swimming
+        warning.
+    </li>
+</ol>
+<p>
+    So instead we use a <strong>precautionary rule</strong>: when there has been a lot of
+    upstream spilling (and/or heavy rain), the prediction is deliberately cautious and moves
+    towards Poor. It is tuned so that the genuinely bad historical days (heavy December
+    spilling) come out as Sufficient or Poor. The cost is some false alarms &mdash; a few
+    quiet-water days with lots of upstream spilling get flagged as worse than they measured
+    &mdash; which is the safe direction to err for river swimming.
+</p>
+
+<h2>What it deliberately ignores</h2>
+<p>
+    Three historical days had high <em>E. coli</em> with essentially <em>no</em> upstream
+    spilling and little or no rain (26&nbsp;Jul, 27&nbsp;Sep and 22&nbsp;Nov 2025). These
+    look like an unmonitored source, a gap in the overflow data, or something non-sewage.
+    They cannot be predicted from spills or rain, so they were excluded when calibrating the
+    model. <strong>This means the prediction can miss a genuinely bad day that arrives with
+    dry weather and no recorded spilling.</strong>
+</p>
+
+<h2>Important caveats</h2>
+<ul>
+    <li>The model was calibrated on ~22 weekly samples at <strong>Conham only</strong>, then
+        applied to the other sites on the assumption that upstream spilling affects them
+        similarly. It has not been validated at those sites.</li>
+    <li>Weekly grab samples cannot resolve how quickly levels rise or fall within a few
+        days, and the <em>E. coli</em> values were read off a published chart, so they are
+        approximate and capped at 1000.</li>
+    <li>Rainfall is from a ~9&nbsp;km weather model, not a gauge at the river.</li>
+    <li>"Upstream" and distances are crude geometric approximations, and the monitored
+        overflows do not cover every possible source.</li>
+    <li>This is an experimental, precautionary estimate &mdash; <strong>not</strong> a
+        measurement, and not a guarantee of safety. River swimming is never 100% safe;
+        please make your own informed decision.</li>
+</ul>
+
+<div><a href="index.html">Back to home page</a></div>
+</body>
+</html>
