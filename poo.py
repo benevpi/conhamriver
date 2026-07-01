@@ -122,7 +122,7 @@ def is_upstream_farleigh(lat, lon):
     # Upstream if latitude is less than the site's latitude
     return lat < 51.3299
 
-def generate_report(river_name, river_label, rivers_to_query, ref_lat, ref_lon, filename, upstream_func):
+def generate_report(river_name, river_label, rivers_to_query, ref_lat, ref_lon, filename, upstream_func, watercourse_clause=None):
     now = datetime.utcnow()
     two_days_ago_dt = now - timedelta(days=2)
     two_days_ago_ms = two_days_ago_dt.timestamp() * 1000
@@ -130,8 +130,12 @@ def generate_report(river_name, river_label, rivers_to_query, ref_lat, ref_lon, 
     # full 7 days feed the predicted-quality model.
     seven_days_ago_str = (now - timedelta(days=7)).strftime("%Y-%m-%d %H:%M:%S")
 
-    # Build where clause for the selected rivers
-    conditions = " OR ".join([f"ReceivingWaterCourse = '{river}'" for river in rivers_to_query])
+    # Build where clause for the selected rivers. A site may supply a custom
+    # watercourse_clause (e.g. Conham matches every River Avon name variant so the
+    # close Hanham outfalls are included, while excluding separate brooks).
+    conditions = watercourse_clause or " OR ".join(
+        [f"ReceivingWaterCourse = '{river}'" for river in rivers_to_query]
+    )
     where_clause = f"({conditions}) AND LatestEventStart >= DATE '{seven_days_ago_str}'"
 
     url = "https://services.arcgis.com/3SZ6e0uCvPROr4mS/ArcGIS/rest/services/Wessex_Water_Storm_Overflow_Activity/FeatureServer/0/query"
@@ -254,6 +258,20 @@ reports = [
         "rivers_to_query": [
             'RIVER AVON', 'RIVER CHEW', 'charlton bottom via sws', 'bathford brook (s)', 'horsecombe brook', 'river avon via sws', 'river avon (via sws)'
         ],
+        # Match every River Avon name variant so the close Hanham outfalls (on
+        # names like "RIVER AVON(E)" / "RIVER AVON (E) VIA SWS") are counted, plus
+        # the Chew and the brooks that join upstream. Warmley/Siston brooks are
+        # deliberately excluded: they drain to a separate catchment that does not
+        # join the Avon above Conham. Three LIKE casings cover the feed's mixed case.
+        "watercourse_clause": (
+            "ReceivingWaterCourse LIKE '%AVON%' "
+            "OR ReceivingWaterCourse LIKE '%avon%' "
+            "OR ReceivingWaterCourse LIKE '%Avon%' "
+            "OR ReceivingWaterCourse = 'RIVER CHEW' "
+            "OR ReceivingWaterCourse = 'charlton bottom via sws' "
+            "OR ReceivingWaterCourse = 'bathford brook (s)' "
+            "OR ReceivingWaterCourse = 'horsecombe brook'"
+        ),
         "ref_lat": 51.444858,
         "ref_lon": -2.534812,
         "filename": "conham",
@@ -319,6 +337,7 @@ for r in reports:
         ref_lon=r["ref_lon"],
         filename=r["filename"],
         upstream_func=r["upstream_func"],
+        watercourse_clause=r.get("watercourse_clause"),
     )
     index_data.append({
         "site": r["river_label"],
