@@ -176,6 +176,7 @@ def load_events(path: Path) -> list[dict]:
             r["distance_miles"] = float(r["distance_miles"]) if r["distance_miles"] else 999.0
             r["in_conham_filter"] = str(r["in_conham_filter"]).lower() == "true"
             r["upstream"] = str(r["upstream"]).lower() == "true"
+            r["duration_hours"] = float(r["duration_hours"]) if r["duration_hours"] not in ("", None) else 0.0
             r["_start"] = datetime.fromisoformat(r["event_start"])
             out.append(r)
     return out
@@ -213,17 +214,27 @@ def run_report(args) -> int:
         lines.append("- (none found in range)")
     lines.append("")
 
+    lines.append("Zero-duration events (instantaneous monitor artefacts) are excluded; only")
+    lines.append("spills with a real duration are counted below.")
+    lines.append("")
+
     for d in high_days:
         end = datetime.combine(date.fromisoformat(d), dt_time.min, tzinfo=timezone.utc)
         start = end - timedelta(days=LOOKBACK_DAYS)
         window = [e for e in events
-                  if start <= e["_start"] < end and e["distance_miles"] <= MAX_DISTANCE_MILES and e["upstream"]]
+                  if start <= e["_start"] < end and e["distance_miles"] <= MAX_DISTANCE_MILES
+                  and e["upstream"] and e["duration_hours"] > 0]
         window.sort(key=lambda e: e["distance_miles"])
         outside = [e for e in window if not e["in_conham_filter"]]
+        within2 = [e for e in window if e["distance_miles"] <= 2.0]
+        nearest_off = min((e["distance_miles"] for e in outside), default=None)
         lines.append(f"## {d} -- E. coli {ecoli[d]:.0f} CFU/100ml")
         lines.append("")
-        lines.append(f"{len(window)} upstream spill events in the 7-day window; "
-                     f"{len(outside)} on watercourses outside the Conham filter.")
+        lines.append(f"{len(window)} real spill events in the 7-day window; "
+                     f"{len(outside)} on watercourses outside the Conham filter; "
+                     f"{len(within2)} within 2 miles of Conham; "
+                     f"nearest off-filter spill "
+                     f"{f'{nearest_off:.1f} mi' if nearest_off is not None else 'none in range'}.")
         lines.append("")
         if window:
             lines.append("| Outfall | Watercourse | In filter? | Dist (mi) | Start | Dur (h) |")
