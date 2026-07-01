@@ -51,6 +51,53 @@ def get_precipitation_warnings(lat, lon):
             )
     return warnings
 
+
+def get_recent_rain_mm(lat, lon):
+    """Total rainfall (mm) over roughly the last 3 days, for the prediction model."""
+    url = "https://api.open-meteo.com/v1/forecast"
+    params = {
+        "latitude": lat,
+        "longitude": lon,
+        "daily": "precipitation_sum",
+        "past_days": 3,
+        "forecast_days": 1,
+        "timezone": "UTC",
+    }
+    try:
+        resp = requests.get(url, params=params, timeout=10)
+        resp.raise_for_status()
+        precip = resp.json().get("daily", {}).get("precipitation_sum", [])
+        # Sum the past days (drop the final entry, which is today's forecast).
+        past = [p for p in precip[:-1] if p is not None]
+        return round(sum(past), 1)
+    except Exception as e:
+        print(f"Failed to fetch recent rain: {e}")
+        return 0.0
+
+
+# --- Predicted bathing-water quality model ----------------------------------
+# Precautionary model mapping recent upstream CSO spilling (+ recent rain) to a
+# bathing-water category. Calibrated on 22 Conham E. coli samples (three
+# rainfall-independent anomalies excluded). See docs/about_predictions.html for
+# why a precautionary rule is used instead of a regression, and the caveats.
+QUALITY_ORDER = ["Excellent", "Good", "Sufficient", "Poor"]
+# Upper bounds (hours of upstream spilling in the last 7 days) for each category.
+QUALITY_SPILL_BOUNDS = [(15.0, "Excellent"), (100.0, "Good"), (500.0, "Sufficient")]
+RAIN_WORSEN_MM = 20.0  # heavy recent rain worsens the prediction by one step
+
+
+def predict_water_quality(spill_hours_7d, recent_rain_mm):
+    """Return (category, css_class) from upstream spill hours and recent rain."""
+    category = "Poor"
+    for bound, label in QUALITY_SPILL_BOUNDS:
+        if spill_hours_7d < bound:
+            category = label
+            break
+    if recent_rain_mm >= RAIN_WORSEN_MM:  # rainfall-driven contamination not in CSO data
+        idx = min(QUALITY_ORDER.index(category) + 1, len(QUALITY_ORDER) - 1)
+        category = QUALITY_ORDER[idx]
+    return category, "quality-" + category.lower()
+
 # Upstream filter functions for each site
 def is_upstream_conham(lat, lon):
     # Upstream if longitude is greater (i.e., east of the swim site)
@@ -78,11 +125,14 @@ def is_upstream_farleigh(lat, lon):
 def generate_report(river_name, river_label, rivers_to_query, ref_lat, ref_lon, filename, upstream_func):
     now = datetime.utcnow()
     two_days_ago_dt = now - timedelta(days=2)
-    two_days_ago_str = two_days_ago_dt.strftime("%Y-%m-%d %H:%M:%S")
+    two_days_ago_ms = two_days_ago_dt.timestamp() * 1000
+    # Query a 7-day window: the last 2 days drive the existing risk/table, and the
+    # full 7 days feed the predicted-quality model.
+    seven_days_ago_str = (now - timedelta(days=7)).strftime("%Y-%m-%d %H:%M:%S")
 
     # Build where clause for the selected rivers
     conditions = " OR ".join([f"ReceivingWaterCourse = '{river}'" for river in rivers_to_query])
-    where_clause = f"({conditions}) AND LatestEventStart >= DATE '{two_days_ago_str}'"
+    where_clause = f"({conditions}) AND LatestEventStart >= DATE '{seven_days_ago_str}'"
 
     url = "https://services.arcgis.com/3SZ6e0uCvPROr4mS/ArcGIS/rest/services/Wessex_Water_Storm_Overflow_Activity/FeatureServer/0/query"
 
@@ -108,6 +158,7 @@ def generate_report(river_name, river_label, rivers_to_query, ref_lat, ref_lon, 
     ]
     band_durations = [0] * len(band_edges)
     last_cso_end = None
+    spill_hours_7d = 0.0  # total upstream spilling within 20 miles over the last 7 days
 
     if data.get("features"):
         for feat in data["features"]:
@@ -119,13 +170,18 @@ def generate_report(river_name, river_label, rivers_to_query, ref_lat, ref_lon, 
             if start and end and lat is not None and lon is not None and upstream_func(lat, lon):
                 duration_seconds = (end - start) / 1000
                 dist = haversine(ref_lat, ref_lon, lat, lon)
-                for i, edge in enumerate(band_edges):
-                    lower = 0 if i == 0 else band_edges[i-1]
-                    if lower < dist <= edge:
-                        band_durations[i] += duration_seconds
-                        break
-                if last_cso_end is None or end > last_cso_end:
-                    last_cso_end = end
+                # 7-day upstream total (within 20 miles) feeds the prediction model.
+                if dist <= 20:
+                    spill_hours_7d += duration_seconds / 3600
+                # The distance-band table / risk use only the last two days.
+                if start >= two_days_ago_ms:
+                    for i, edge in enumerate(band_edges):
+                        lower = 0 if i == 0 else band_edges[i-1]
+                        if lower < dist <= edge:
+                            band_durations[i] += duration_seconds
+                            break
+                    if last_cso_end is None or end > last_cso_end:
+                        last_cso_end = end
 
     # Risk calculation as before
     total_seconds = sum(band_durations)
@@ -145,6 +201,18 @@ def generate_report(river_name, river_label, rivers_to_query, ref_lat, ref_lon, 
 
     warnings = get_precipitation_warnings(ref_lat, ref_lon)
     weather_message = "<br>".join(warnings) if warnings else ""
+
+    # Predicted bathing-water quality from 7-day upstream spilling + recent rain.
+    recent_rain_mm = get_recent_rain_mm(ref_lat, ref_lon)
+    predicted_quality, quality_class = predict_water_quality(spill_hours_7d, recent_rain_mm)
+    predicted_quality_block = (
+        f"<div class='predicted-quality {quality_class}'>"
+        f"Predicted water quality: <strong>{predicted_quality}</strong>"
+        f" <a class='about-predictions' href='about_predictions.html'>(how is this predicted?)</a>"
+        f"</div>"
+        f"<div class='prediction-basis'>Based on {spill_hours_7d:.0f} hours of upstream spilling "
+        f"in the last 7 days and {recent_rain_mm:.0f}mm of recent rain.</div>"
+    )
 
     risk_note_block = ""
     safe_time = None
@@ -169,13 +237,14 @@ def generate_report(river_name, river_label, rivers_to_query, ref_lat, ref_lon, 
         table_rows=table_rows,
         weather_message=weather_message,
         risk_note_block=risk_note_block,
+        predicted_quality_block=predicted_quality_block,
     )
 
     os.makedirs("docs", exist_ok=True)
     with open(f"docs/{filename}.html", "w", encoding="utf-8") as f:
         f.write(html)
     print(f"HTML report written to docs/{filename}.html")
-    return risk, warnings, safe_time
+    return risk, warnings, safe_time, predicted_quality, quality_class
 
 # --- Define rivers/reports you want to generate ---
 reports = [
@@ -242,7 +311,7 @@ reports = [
 ]
 
 for r in reports:
-    risk, warnings, safe_time = generate_report(
+    risk, warnings, safe_time, predicted_quality, quality_class = generate_report(
         river_name=r["river_name"],
         river_label=r["river_label"],
         rivers_to_query=r["rivers_to_query"],
@@ -257,6 +326,8 @@ for r in reports:
         "risk": risk,
         "warnings": warnings,
         "safe_time": safe_time,
+        "predicted_quality": predicted_quality,
+        "quality_class": quality_class,
         "lat": r["ref_lat"],
         "lon": r["ref_lon"],
     })
@@ -281,6 +352,7 @@ for entry in index_data:
         f"<tr>"
         f"<td>{entry['site']}</td>"
         f"<td class=\"{risk_class(entry['risk'])}\">{entry['risk']} {risk_emoji(entry['risk'])}</td>"
+        f"<td class=\"{entry['quality_class']}\">{entry['predicted_quality']}</td>"
         f"<td>{clear_time}</td>"
         f"<td><a href=\"{entry['filename']}\">View report</a></td>"
         "</tr>\n"
