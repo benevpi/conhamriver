@@ -21,15 +21,16 @@ def seconds_to_h_m(seconds):
     minutes = int((seconds % 3600) // 60)
     return hours, minutes
 
-# Fetch precipitation forecast from open-meteo and return warning messages
-def get_precipitation_warnings(lat, lon):
-    """Return a list of warning strings for days with >5mm rain in next 3 days."""
+# Fetch the daily precipitation forecast from open-meteo.
+def get_forecast_rain(lat, lon):
+    """Return (forecast, warnings): forecast is a list of (date, mm) for the next
+    three days; warnings is the >5mm warning strings for those days."""
     url = "https://api.open-meteo.com/v1/forecast"
     params = {
         "latitude": lat,
         "longitude": lon,
         "daily": "precipitation_sum",
-        "forecast_days": 3,
+        "forecast_days": 4,  # today + next 3 days
         "timezone": "UTC",
     }
     try:
@@ -37,19 +38,18 @@ def get_precipitation_warnings(lat, lon):
         resp.raise_for_status()
         data = resp.json()
     except Exception as e:
-        # On failure, just return an empty list
         print(f"Failed to fetch weather data: {e}")
-        return []
+        return [], []
 
-    warnings = []
+    today = datetime.utcnow().strftime("%Y-%m-%d")
     times = data.get("daily", {}).get("time", [])
     precip = data.get("daily", {}).get("precipitation_sum", [])
-    for day, rain in zip(times, precip):
-        if rain is not None and rain > 5:
-            warnings.append(
-                f"{day}: {rain}mm of rain forecast - water quality likely to get worse after this day"
-            )
-    return warnings
+    forecast = [(day, rain or 0.0) for day, rain in zip(times, precip) if day > today][:3]
+    warnings = [
+        f"{day}: {rain}mm of rain forecast - water quality likely to get worse after this day"
+        for day, rain in forecast if rain > 5
+    ]
+    return forecast, warnings
 
 
 def get_recent_rain_mm(lat, lon):
@@ -97,6 +97,43 @@ def predict_water_quality(spill_hours_7d, recent_rain_mm):
         idx = min(QUALITY_ORDER.index(category) + 1, len(QUALITY_ORDER) - 1)
         category = QUALITY_ORDER[idx]
     return category, "quality-" + category.lower()
+
+
+def spill_base_category(spill_hours_7d):
+    """Category from spill hours alone (no rain adjustment)."""
+    for bound, label in QUALITY_SPILL_BOUNDS:
+        if spill_hours_7d < bound:
+            return label
+    return "Poor"
+
+
+# Cumulative forecast rain (mm) needed to worsen the forecast by 1/2/3 steps.
+FORECAST_RAIN_STEPS = [(40.0, 3), (20.0, 2), (8.0, 1)]
+
+
+def forecast_water_quality(spill_hours_7d, recent_rain_mm, forecast_rain):
+    """Project the category for each of the next 3 days from forecast rainfall.
+
+    Anchored on current spilling (which persists), then worsened by the rain that
+    will have fallen by that day (recent rain already down + cumulative forecast).
+    Rain is the only forward-looking signal, so the forecast is rain-driven and
+    deliberately cautious. Returns a list of (date, mm_that_day, category, css).
+    """
+    base = spill_base_category(spill_hours_7d)
+    rows = []
+    cumulative = recent_rain_mm
+    for day, rain in forecast_rain:
+        cumulative += rain
+        steps = 0
+        for threshold, s in FORECAST_RAIN_STEPS:
+            if cumulative >= threshold:
+                steps = s
+                break
+        idx = min(QUALITY_ORDER.index(base) + steps, len(QUALITY_ORDER) - 1)
+        category = QUALITY_ORDER[idx]
+        rows.append((day, round(rain, 1), category, "quality-" + category.lower()))
+    return rows
+
 
 # Upstream filter functions for each site
 def is_upstream_conham(lat, lon):
@@ -203,7 +240,7 @@ def generate_report(river_name, river_label, rivers_to_query, ref_lat, ref_lon, 
         hours, minutes = seconds_to_h_m(band_durations[i])
         table_rows += f"<tr><td>{label}</td><td>{hours} hours {minutes} minutes</td></tr>\n"
 
-    warnings = get_precipitation_warnings(ref_lat, ref_lon)
+    forecast_rain, warnings = get_forecast_rain(ref_lat, ref_lon)
     weather_message = "<br>".join(warnings) if warnings else ""
 
     # Predicted bathing-water quality from 7-day upstream spilling + recent rain.
@@ -217,6 +254,27 @@ def generate_report(river_name, river_label, rivers_to_query, ref_lat, ref_lon, 
         f"<div class='prediction-basis'>Based on {spill_hours_7d:.0f} hours of upstream spilling "
         f"in the last 7 days and {recent_rain_mm:.0f}mm of recent rain.</div>"
     )
+
+    # Three-day outlook: project the category forward using the rain forecast.
+    forecast_rows = forecast_water_quality(spill_hours_7d, recent_rain_mm, forecast_rain)
+    if forecast_rows:
+        forecast_cells = "".join(
+            f"<tr><td>{day}</td><td>{rain:.0f}mm</td>"
+            f"<td class='{css}'>{category}</td></tr>\n"
+            for day, rain, category, css in forecast_rows
+        )
+        forecast_block = (
+            "<table class='forecast-table'>"
+            f"<caption>Forecast water quality for the next {len(forecast_rows)} days "
+            "(from the rain forecast)</caption>"
+            "<tr><th>Date</th><th>Rain forecast</th><th>Predicted quality</th></tr>"
+            f"{forecast_cells}</table>"
+            "<div class='prediction-basis'>Forecast is rain-driven and cautious: rain is "
+            "assumed to trigger upstream spilling. "
+            "<a href='about_predictions.html'>How this works.</a></div>"
+        )
+    else:
+        forecast_block = ""
 
     risk_note_block = ""
     safe_time = None
@@ -242,6 +300,7 @@ def generate_report(river_name, river_label, rivers_to_query, ref_lat, ref_lon, 
         weather_message=weather_message,
         risk_note_block=risk_note_block,
         predicted_quality_block=predicted_quality_block,
+        forecast_block=forecast_block,
     )
 
     os.makedirs("docs", exist_ok=True)

@@ -103,6 +103,10 @@ caption {
     margin-bottom: 0.8em;
 }
 
+.forecast-table {
+    margin-top: 1em;
+}
+
 .disclaimer {
     font-size: 0.95em;
     color: var(--text-secondary);
