@@ -68,6 +68,8 @@ function render(){
   W=cont.clientWidth||880;
   const months=[];let m=new Date(Date.UTC(2025,4,1));
   while(m<=new Date(t1)){months.push(new Date(m));m=new Date(Date.UTC(m.getUTCFullYear(),m.getUTCMonth()+1,1));}
+  const weeks=[];let wk=new Date(t0);wk.setUTCDate(wk.getUTCDate()+((7-wk.getUTCDay())%7));// first Sunday >= start
+  while(wk.getTime()<=t1){weeks.push(new Date(wk));wk.setUTCDate(wk.getUTCDate()+7);}
   panels.forEach((p,pi)=>{
     const H=p.h;const svg=el('svg',{viewBox:'0 0 '+W+' '+H,role:'img','aria-label':p.label});
     const yA=(H-M.t-M.b);const yBase=H-M.b;
@@ -75,6 +77,8 @@ function render(){
     {const mx=p.max,mn=p.min||0;ticks=p.ticks;yScale=v=>M.t+(1-(v-mn)/(mx-mn))*yA;}
     ticks.forEach(tk=>{const y=yScale(tk);svg.appendChild(el('line',{class:'grid',x1:M.l,y1:y,x2:W-M.r,y2:y}));
       svg.appendChild(txt(M.l-6,y+3,tk,{class:'tick','text-anchor':'end'}));});
+    weeks.forEach(w=>{const x=xOf(w.toISOString().slice(0,10));
+      svg.appendChild(el('line',{class:'grid',x1:x,y1:M.t,x2:x,y2:yBase,opacity:.3}));});
     months.forEach(mo=>{const x=xOf(mo.toISOString().slice(0,10));
       svg.appendChild(el('line',{class:'grid',x1:x,y1:M.t,x2:x,y2:yBase,opacity:.55}));
       if(pi===panels.length-1)svg.appendChild(txt(x,H-1,mo.toLocaleDateString('en-GB',{month:'short'}),{class:'tick','text-anchor':'start'}));});
