@@ -1,116 +1,9 @@
-#!/usr/bin/env python3
-"""Build a standalone bacteria + bathing-water-classification page for any river.
-
-Given a sampling CSV with ``sample_date``, ``e_coli_cfu_per_100ml`` and
-``intestinal_enterococci_cfu_per_100ml`` columns (the shape produced by
-``ea_bathing_water.py`` or ``conham_sampling_2025_2026.csv``), this renders a
-self-contained ``docs/<slug>.html`` page: both indicators on one 0-1000 CFU/100ml
-panel, with the UK bathing-water class shown as vertical time bands computed the
-Directive way (log-normal 95th/90th percentiles of every sample up to each date,
-worse of the two indicators). It's the portable version of the bacteria panel on
-the Conham 2025 graph.
-
-    python scripts/build_river_page.py --samples docs/data/ilkley_sampling.csv \\
-        --title "River Wharfe at Ilkley" --out docs/ilkley.html
-
-The classification logic is imported from build_2025_timeseries so there is one
-source of truth. Standard library only.
-"""
-from __future__ import annotations
-
-import argparse
-import csv
-import json
-import math
-from datetime import date
-from pathlib import Path
-
-from build_2025_timeseries import bathing_class, CLASS_RANK, MIN_SAMPLES_TO_CLASSIFY
-
-
-def _pick(fieldnames: list[str], *must_contain_any, exclude=()) -> str | None:
-    """First column whose lowercased name contains any of the substrings
-    (and none of the ``exclude`` substrings)."""
-    for f in fieldnames:
-        low = f.lower()
-        if any(s in low for s in must_contain_any) and not any(x in low for x in exclude):
-            return f
-    return None
-
-
-def _to_number(v):
-    """Parse a count. Handles '<10', '> 1000', blanks and stray text."""
-    if v is None:
-        return None
-    s = str(v).strip().lstrip("<>=~ ").replace(",", "")
-    if not s:
-        return None
-    num = ""
-    for ch in s:
-        if ch.isdigit() or ch == ".":
-            num += ch
-        elif num:
-            break
-    try:
-        return float(num) if num else None
-    except ValueError:
-        return None
-
-
-def load_samples(path: Path) -> list[dict]:
-    """Read a sampling CSV. Accepts our exact columns *or* the EA/Swimfo download
-    headers (e.g. 'Escherichia coli (E. coli) cfu/100ml', 'Sample Date')."""
-    with path.open(newline="", encoding="utf-8-sig") as h:
-        reader = csv.DictReader(h)
-        fields = reader.fieldnames or []
-        # date: our 'sample_date', or the EA 'sampleTime' / any date/time column.
-        dcol = _pick(fields, "sample_date", "sampledate", "sampletime", "sampledatetime") or \
-            _pick(fields, "date", exclude=("time",)) or _pick(fields, "date", "time")
-        # counts, not the qualifier columns; E. coli must be escherichia (not coliform).
-        ecol = _pick(fields, "escherichia", "e_coli", "e. coli", "e.coli", exclude=("qualifier",)) or \
-            _pick(fields, "escherichia", "e_coli", "e. coli", "e.coli")
-        encol = _pick(fields, "enteroc", exclude=("qualifier",)) or _pick(fields, "enteroc")
-        if not (dcol and ecol and encol):
-            raise SystemExit(
-                f"Could not identify columns in {path}.\n  headers: {fields}\n"
-                f"  matched date={dcol!r} ecoli={ecol!r} enterococci={encol!r}\n"
-                "Rename the columns or tell me the header row."
-            )
-        rows = []
-        for r in reader:
-            raw = str(r.get(dcol, "")).strip()
-            day = raw[:10]
-            # Normalise dd/mm/yyyy -> yyyy-mm-dd if needed.
-            if "/" in day:
-                p = day.split("/")
-                if len(p) == 3:
-                    day = f"{p[2]}-{p[1].zfill(2)}-{p[0].zfill(2)}"
-            if len(day) != 10:
-                continue
-            rows.append({"d": day, "e": _to_number(r.get(ecol)), "en": _to_number(r.get(encol))})
-    rows.sort(key=lambda x: x["d"])
-    return rows
-
-
-def classify(rows: list[dict]) -> None:
-    """Attach an expanding-window bathing-water class to each row (in place)."""
-    ec_hist, en_hist = [], []
-    for row in rows:
-        if row["e"] is None or row["en"] is None:
-            row["cls"] = None
-            continue
-        ec_hist.append(row["e"])
-        en_hist.append(row["en"])
-        row["cls"] = (CLASS_RANK[bathing_class(ec_hist, en_hist)]
-                      if len(ec_hist) >= MIN_SAMPLES_TO_CLASSIFY else None)
-
-
-PAGE = r"""<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>__TITLE__ — bathing-water quality</title>
+<title>River Wharfe at Ilkley — bathing-water quality</title>
 <script src="https://cdn.counter.dev/script.js" data-id="99522e23-c138-4047-babb-1e1503dd4a6f" data-utcoffset="1"></script>
 <style>
 :root{--surface:#fcfcfb;--ink:#0b0b0b;--ink2:#52514e;--grid:#e7e6e2;--axis:#b8b7b2;--ecoli:#e34948;--ent:#8a5a00;--cap:#b8b7b2;}
@@ -135,16 +28,16 @@ th,td{border:1px solid var(--grid);padding:3px 7px;text-align:right}th:first-chi
 </style>
 </head>
 <body>
-<h1>__TITLE__</h1>
-<p class="sub">Environment Agency <em>E.&nbsp;coli</em> and intestinal enterococci samples, with the UK bathing-water class as of each sample date (vertical bands). __SUBTITLE__</p>
+<h1>River Wharfe at Ilkley</h1>
+<p class="sub">Environment Agency <em>E.&nbsp;coli</em> and intestinal enterococci samples, with the UK bathing-water class as of each sample date (vertical bands). 46 samples across 2024–2026.</p>
 <div class="controls"><button id="themeBtn" type="button">Toggle dark / light</button><button id="tblBtn" type="button">Show table</button></div>
 <div id="panel"></div>
 <div id="tableWrap" hidden></div>
-<p class="foot">__CAPNOTE__ The <b>vertical bands</b> are the bathing-water class as of each date — <span style="color:#2ea05c">■</span>&nbsp;Excellent, <span style="color:#b89a12">■</span>&nbsp;Good, <span style="color:#e6822c">■</span>&nbsp;Sufficient, <span style="color:#d64541">■</span>&nbsp;Poor — from the log-normal 95th/90th percentiles of every sample up to that date (worse of the two indicators). Lines break across the off-season gap between bathing seasons. Source: __SOURCE__.</p>
+<p class="foot">Counts are on a log scale (readings span several orders of magnitude). The <b>vertical bands</b> are the bathing-water class as of each date — <span style="color:#2ea05c">■</span>&nbsp;Excellent, <span style="color:#b89a12">■</span>&nbsp;Good, <span style="color:#e6822c">■</span>&nbsp;Sufficient, <span style="color:#d64541">■</span>&nbsp;Poor — from the log-normal 95th/90th percentiles of every sample up to that date (worse of the two indicators). Lines break across the off-season gap between bathing seasons. Source: Environment Agency Bathing Water Quality — Wharfe at Wilderness Carpark (environment.data.gov.uk).</p>
 <div id="tip" class="tip" hidden></div>
 <script>
-const DATA=__DATA__;
-const SC=__SCALE__;
+const DATA=[{"d":"2024-05-06","e":210.0,"en":64.0,"cls":null},{"d":"2024-05-16","e":250.0,"en":64.0,"cls":null},{"d":"2024-05-27","e":10000.0,"en":9000.0,"cls":null},{"d":"2024-05-29","e":10000.0,"en":7000.0,"cls":null},{"d":"2024-06-07","e":520.0,"en":200.0,"cls":"poor"},{"d":"2024-06-13","e":310.0,"en":91.0,"cls":"poor"},{"d":"2024-06-18","e":880.0,"en":270.0,"cls":"poor"},{"d":"2024-06-25","e":180.0,"en":45.0,"cls":"poor"},{"d":"2024-07-01","e":190.0,"en":18.0,"cls":"poor"},{"d":"2024-07-08","e":500.0,"en":170.0,"cls":"poor"},{"d":"2024-07-13","e":1300.0,"en":180.0,"cls":"poor"},{"d":"2024-07-19","e":400.0,"en":120.0,"cls":"poor"},{"d":"2024-07-26","e":320.0,"en":45.0,"cls":"poor"},{"d":"2024-08-01","e":440.0,"en":220.0,"cls":"poor"},{"d":"2024-08-09","e":400.0,"en":100.0,"cls":"poor"},{"d":"2024-08-15","e":460.0,"en":100.0,"cls":"poor"},{"d":"2024-08-20","e":380.0,"en":210.0,"cls":"poor"},{"d":"2024-08-28","e":1500.0,"en":520.0,"cls":"poor"},{"d":"2024-09-05","e":520.0,"en":210.0,"cls":"poor"},{"d":"2024-09-16","e":440.0,"en":190.0,"cls":"poor"},{"d":"2025-05-06","e":110.0,"en":18.0,"cls":"poor"},{"d":"2025-05-16","e":27.0,"en":10.0,"cls":"poor"},{"d":"2025-05-22","e":10.0,"en":10.0,"cls":"poor"},{"d":"2025-05-31","e":900.0,"en":280.0,"cls":"poor"},{"d":"2025-06-05","e":460.0,"en":140.0,"cls":"poor"},{"d":"2025-06-09","e":580.0,"en":160.0,"cls":"poor"},{"d":"2025-06-20","e":73.0,"en":18.0,"cls":"poor"},{"d":"2025-06-23","e":120.0,"en":55.0,"cls":"poor"},{"d":"2025-07-02","e":350.0,"en":100.0,"cls":"poor"},{"d":"2025-07-12","e":120.0,"en":64.0,"cls":"poor"},{"d":"2025-07-16","e":420.0,"en":27.0,"cls":"poor"},{"d":"2025-07-21","e":2400.0,"en":580.0,"cls":"poor"},{"d":"2025-07-31","e":160.0,"en":10.0,"cls":"poor"},{"d":"2025-08-07","e":350.0,"en":160.0,"cls":"poor"},{"d":"2025-08-14","e":91.0,"en":18.0,"cls":"poor"},{"d":"2025-08-18","e":680.0,"en":230.0,"cls":"poor"},{"d":"2025-08-27","e":64.0,"en":10.0,"cls":"poor"},{"d":"2025-09-02","e":330.0,"en":130.0,"cls":"poor"},{"d":"2025-09-11","e":260.0,"en":170.0,"cls":"poor"},{"d":"2025-09-23","e":2600.0,"en":490.0,"cls":"poor"},{"d":"2026-05-18","e":82.0,"en":10.0,"cls":"poor"},{"d":"2026-05-23","e":230.0,"en":36.0,"cls":"poor"},{"d":"2026-05-28","e":91.0,"en":10.0,"cls":"poor"},{"d":"2026-06-11","e":910.0,"en":490.0,"cls":"poor"},{"d":"2026-06-18","e":240.0,"en":45.0,"cls":"poor"},{"d":"2026-06-24","e":64.0,"en":46.0,"cls":"poor"}];
+const SC={"type": "log", "min": 10, "max": 10000, "ticks": [10, 100, 1000, 10000]};
 const cssv=n=>getComputedStyle(document.documentElement).getPropertyValue(n).trim();
 const days=DATA.map(d=>d.d);
 const t0=Date.parse(days[0]),t1=Date.parse(days[days.length-1]);
@@ -229,57 +122,3 @@ render();window.addEventListener('resize',render);
 </script>
 </body>
 </html>
-"""
-
-
-def run(args) -> int:
-    rows = load_samples(Path(args.samples))
-    if not rows:
-        raise SystemExit(f"No samples in {args.samples}")
-    classify(rows)
-    data = json.dumps(rows, separators=(",", ":"))
-    n_class = sum(1 for r in rows if r.get("cls"))
-    seasons = sorted({r["d"][:4] for r in rows})
-    subtitle = f"{len(rows)} samples across {seasons[0]}–{seasons[-1]}."
-
-    # Adaptive y-scale: linear 0-1000 (with 1000 cap line) when readings stay
-    # within the lab-capped Conham range; log scale when they run higher (EA
-    # counts can reach 10000+), so low readings aren't flattened.
-    vals = [v for r in rows for v in (r["e"], r["en"]) if v]
-    dmax = max(vals) if vals else 1000
-    if dmax > 1000:
-        ymax = 10 ** math.ceil(math.log10(dmax))
-        scale = {"type": "log", "min": 10, "max": ymax,
-                 "ticks": [10 ** k for k in range(1, round(math.log10(ymax)) + 1)]}
-        capnote = "Counts are on a log scale (readings span several orders of magnitude)."
-    else:
-        scale = {"type": "linear", "min": 0, "max": 1000,
-                 "ticks": [0, 250, 500, 750, 1000], "cap": 1000}
-        capnote = "Both indicators are capped at 1000 CFU/100ml (dashed line)."
-
-    html = (PAGE.replace("__TITLE__", args.title)
-                .replace("__SUBTITLE__", subtitle)
-                .replace("__SOURCE__", args.source)
-                .replace("__CAPNOTE__", capnote)
-                .replace("__SCALE__", json.dumps(scale))
-                .replace("__DATA__", data))
-    out = Path(args.out)
-    out.parent.mkdir(parents=True, exist_ok=True)
-    out.write_text(html, encoding="utf-8")
-    print(f"Wrote {out} ({len(rows)} samples, {n_class} classified, seasons {seasons[0]}–{seasons[-1]})")
-    return 0
-
-
-def main() -> int:
-    p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    p.add_argument("--samples", required=True, help="Sampling CSV (sample_date, e_coli_cfu_per_100ml, intestinal_enterococci_cfu_per_100ml)")
-    p.add_argument("--title", required=True, help="Page heading, e.g. 'River Wharfe at Ilkley'")
-    p.add_argument("--out", required=True, help="Output HTML path, e.g. docs/ilkley.html")
-    p.add_argument("--source", default="Environment Agency Bathing Water Quality (environment.data.gov.uk)")
-    p.set_defaults(func=run)
-    args = p.parse_args()
-    return args.func(args)
-
-
-if __name__ == "__main__":
-    raise SystemExit(main())
