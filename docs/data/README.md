@@ -68,6 +68,28 @@ ending on that day inclusive) and `event_count_day`. `build_2025_timeseries.py`
 uses this file when present to populate the CSO panels every day, falling back to
 the sample-only feature windows otherwise.
 
+## Other rivers: EA bathing-water data + page builder
+
+To reproduce the bacteria/classification view for another river, two scripts pull
+Environment Agency data and render a standalone page:
+
+```bash
+python scripts/ea_bathing_water.py fetch --eubwid ukl1602-36700 \
+    --out docs/data/ilkley_sampling.csv --years 2021-2025      # EA API -> sampling CSV
+python scripts/build_river_page.py --samples docs/data/ilkley_sampling.csv \
+    --title "River Wharfe at Ilkley" --out docs/ilkley.html    # offline -> standalone page
+```
+
+`ea_bathing_water.py fetch` needs `environment.data.gov.uk` egress; find a site's
+`eubwid` in its Swimfo profile URL (`.../profile.html?site=<eubwid>`) and verify
+it before trusting the output (use `--debug` to dump a raw sample if the API's
+determinand field names differ). It writes E. coli + intestinal enterococci in
+the same shape as `conham_sampling_2025_2026.csv`. `build_river_page.py` then
+computes the bathing-water classification (shared logic from
+`build_2025_timeseries.py`) and renders both indicators on one panel with the
+class as vertical time bands — the portable version of the Conham bacteria panel.
+It works on any sampling CSV in that format.
+
 ## Per-outfall E. coli model
 
 `scripts/model_conham_ecoli_by_site.py` builds a model from **individual CSO
