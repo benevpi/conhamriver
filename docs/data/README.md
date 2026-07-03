@@ -98,7 +98,9 @@ across the Bristol Avon catchment (Bristol, Bath, the Chew and Frome
 sub-catchments and the upper-Avon headwaters). The point is to catch localised
 convective **thunderstorms** — a cell can dump heavy rain on one tributary while
 the rest of the catchment stays dry, which a single Conham point and daily totals
-both miss. It pulls **hourly** precipitation from the Open-Meteo ERA5 archive:
+both miss. It pulls **hourly** precipitation and **CAPE** (Convective Available
+Potential Energy, a thunderstorm-likelihood proxy) from the Open-Meteo ERA5
+archive — a heavy rain hour on a high-CAPE day is likely a convective storm cell:
 
 ```bash
 python scripts/rainfall_intensity.py sites     # list the catchment sites (no network)
@@ -109,11 +111,13 @@ python scripts/rainfall_intensity.py fetch     # Open-Meteo hourly -> the two CS
 is allowed and commit both outputs:
 
 - `rainfall_intensity_by_site.csv` — tidy long form: `date, site, lat, lon,
-  rain_total_mm, rain_max_mm_per_h, peak_hour`;
+  rain_total_mm, rain_max_mm_per_h, peak_hour, cape_max_j_per_kg,
+  cape_at_peak_hour_j_per_kg`;
 - `rainfall_intensity_daily_max.csv` — wide: one row per day, one column per site
   of the peak hourly intensity, plus `catchment_max_mm_per_h` /
   `catchment_max_site` (the worst downpour anywhere in the catchment that day and
-  where it hit).
+  where it hit) and `catchment_max_cape_j_per_kg` / `catchment_max_cape_site`
+  (the most unstable/thunderstorm-favourable point that day).
 
 By default `fetch` covers the E. coli sampling window (first sample minus a
 buffer .. last sample); override with `--start`/`--end`. Caveat: ERA5 is a

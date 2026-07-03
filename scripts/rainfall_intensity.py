@@ -8,14 +8,24 @@ thunderstorms are also *local* -- a cell can dump 20 mm on Keynsham while Conham
 stays dry -- so a single point (as in `weather_conham_ecoli.py`) can miss them
 entirely.
 
-This script pulls **hourly** precipitation from the Open-Meteo ERA5 archive for
-many sites spread across the Bristol Avon catchment (Bristol, Bath, the Chew and
-Frome sub-catchments, and the upper Avon headwaters) and, for each site and day,
-computes:
+This script pulls **hourly** precipitation and **CAPE** from the Open-Meteo ERA5
+archive for many sites spread across the Bristol Avon catchment (Bristol, Bath,
+the Chew and Frome sub-catchments, and the upper Avon headwaters) and, for each
+site and day, computes:
 
 - ``rain_total_mm``      -- daily total (sanity check against the daily archive);
 - ``rain_max_mm_per_h``  -- the heaviest single hour = peak intensity;
-- ``peak_hour``          -- the local hour (0-23) that peak fell in.
+- ``peak_hour``          -- the local hour (0-23) that peak fell in;
+- ``cape_max``           -- the day's peak CAPE (instability "fuel", J/kg);
+- ``cape_at_peak_hour``  -- CAPE during the heaviest rain hour.
+
+CAPE (Convective Available Potential Energy) is a thunderstorm-likelihood proxy:
+a heavy rain hour landing on a high-CAPE day (say >~500 J/kg) is strong evidence
+the downpour was **convective** -- a storm cell -- rather than gentle frontal
+rain. That is exactly the localised-thunderstorm signal we are chasing, and it is
+free from the same request. (An explicit modelled ``lightning_potential`` index
+exists in Open-Meteo's high-res Historical Forecast API but not in this ERA5
+archive endpoint, so it is intentionally not fetched here.)
 
 Two outputs:
 
@@ -109,14 +119,20 @@ def read_sample_dates(path: Path) -> list[date]:
         return sorted(date.fromisoformat(row["sample_date"]) for row in csv.DictReader(handle))
 
 
-def fetch_hourly(lat: float, lon: float, start: date, end: date) -> list[tuple[str, float]]:
-    """Return [(iso_hour, precipitation_mm), ...] for a site over [start, end]."""
+def fetch_hourly(lat: float, lon: float, start: date, end: date) -> list[tuple[str, float, float]]:
+    """Return [(iso_hour, precipitation_mm, cape_j_per_kg), ...] over [start, end].
+
+    ``cape`` (Convective Available Potential Energy, J/kg) is the atmosphere's
+    instability "fuel": high CAPE means a thunderstorm-favourable atmosphere. A
+    heavy rain hour landing on a high-CAPE day is strong evidence the downpour
+    was convective (a storm cell) rather than frontal drizzle.
+    """
     params = {
         "latitude": lat,
         "longitude": lon,
         "start_date": start.isoformat(),
         "end_date": end.isoformat(),
-        "hourly": "precipitation",
+        "hourly": "precipitation,cape",
         "timezone": "Europe/London",
     }
     url = ARCHIVE_URL + "?" + urllib.parse.urlencode(params)
@@ -127,21 +143,36 @@ def fetch_hourly(lat: float, lon: float, start: date, end: date) -> list[tuple[s
     hourly = data.get("hourly", {})
     times = hourly.get("time", [])
     precip = hourly.get("precipitation", [None] * len(times))
-    return [(t, (p if p is not None else 0.0)) for t, p in zip(times, precip)]
+    cape = hourly.get("cape", [None] * len(times))
+    return [
+        (t, (p if p is not None else 0.0), (c if c is not None else 0.0))
+        for t, p, c in zip(times, precip, cape)
+    ]
 
 
-def daily_intensity(hourly: list[tuple[str, float]]) -> dict[str, tuple[float, float, int]]:
-    """Collapse hourly rain to per-day (total, max_hourly, peak_hour)."""
-    by_day: dict[str, list[tuple[int, float]]] = defaultdict(list)
-    for iso_hour, mm in hourly:
+# Per-day tuple: (total_mm, peak_mm_per_h, peak_hour, cape_max, cape_at_peak_hour).
+DayStats = tuple[float, float, int, float, float]
+
+
+def daily_intensity(hourly: list[tuple[str, float, float]]) -> dict[str, DayStats]:
+    """Collapse hourly rain + CAPE to per-day stats.
+
+    Returns, per day: daily total rain, the heaviest single hour (peak
+    intensity) and the hour it fell in, the day's max CAPE, and the CAPE during
+    that heaviest rain hour (ties instability to the actual downpour).
+    """
+    by_day: dict[str, list[tuple[int, float, float]]] = defaultdict(list)
+    for iso_hour, mm, cape in hourly:
         day, _, clock = iso_hour.partition("T")
         hour = int(clock[:2]) if clock else 0
-        by_day[day].append((hour, mm))
-    out: dict[str, tuple[float, float, int]] = {}
+        by_day[day].append((hour, mm, cape))
+    out: dict[str, DayStats] = {}
     for day, hours in by_day.items():
-        total = sum(mm for _, mm in hours)
-        peak_hour, peak_mm = max(hours, key=lambda hm: hm[1])
-        out[day] = (round(total, 2), round(peak_mm, 2), peak_hour)
+        total = sum(mm for _, mm, _ in hours)
+        peak_hour, peak_mm, cape_at_peak = max(hours, key=lambda hmc: hmc[1])
+        cape_max = max(c for _, _, c in hours)
+        out[day] = (round(total, 2), round(peak_mm, 2), peak_hour,
+                    round(cape_max, 1), round(cape_at_peak, 1))
     return out
 
 
@@ -154,8 +185,8 @@ def run_fetch(args) -> int:
         end = max(dates)
     print(f"Fetching hourly rainfall for {len(SITES)} sites, {start}..{end}")
 
-    # site -> {day -> (total, max_hourly, peak_hour)}
-    per_site: dict[str, dict[str, tuple[float, float, int]]] = {}
+    # site -> {day -> DayStats}
+    per_site: dict[str, dict[str, DayStats]] = {}
     for i, (name, lat, lon) in enumerate(SITES, 1):
         try:
             hourly = fetch_hourly(lat, lon, start, end)
@@ -178,46 +209,61 @@ def run_fetch(args) -> int:
     coords = {name: (lat, lon) for name, lat, lon in SITES}
     with long_path.open("w", newline="", encoding="utf-8") as handle:
         writer = csv.writer(handle)
-        writer.writerow(["date", "site", "lat", "lon", "rain_total_mm", "rain_max_mm_per_h", "peak_hour"])
+        writer.writerow(["date", "site", "lat", "lon", "rain_total_mm", "rain_max_mm_per_h",
+                         "peak_hour", "cape_max_j_per_kg", "cape_at_peak_hour_j_per_kg"])
         for name, _, _ in SITES:
             lat, lon = coords[name]
             for day in all_days:
                 if day in per_site[name]:
-                    total, peak_mm, peak_hour = per_site[name][day]
-                    writer.writerow([day, name, lat, lon, total, peak_mm, peak_hour])
+                    total, peak_mm, peak_hour, cape_max, cape_at_peak = per_site[name][day]
+                    writer.writerow([day, name, lat, lon, total, peak_mm, peak_hour, cape_max, cape_at_peak])
 
-    # Wide form: peak hourly intensity per site per day + catchment-wide worst.
+    # Wide form: peak hourly intensity per site per day + catchment-wide worst,
+    # plus a catchment-wide CAPE summary so a day's convective potential sits
+    # next to its heaviest downpour.
     site_names = [name for name, _, _ in SITES]
     wide_path = Path(args.wide)
     with wide_path.open("w", newline="", encoding="utf-8") as handle:
         writer = csv.writer(handle)
-        writer.writerow(["date"] + site_names + ["catchment_max_mm_per_h", "catchment_max_site"])
+        writer.writerow(["date"] + site_names + [
+            "catchment_max_mm_per_h", "catchment_max_site",
+            "catchment_max_cape_j_per_kg", "catchment_max_cape_site"])
         for day in all_days:
             row = [day]
             best_mm, best_site = -1.0, ""
+            best_cape, best_cape_site = -1.0, ""
             for name in site_names:
                 if day in per_site[name]:
                     peak_mm = per_site[name][day][1]
+                    cape_max = per_site[name][day][3]
                     row.append(peak_mm)
                     if peak_mm > best_mm:
                         best_mm, best_site = peak_mm, name
+                    if cape_max > best_cape:
+                        best_cape, best_cape_site = cape_max, name
                 else:
                     row.append("")
-            row.extend([round(best_mm, 2) if best_mm >= 0 else "", best_site])
+            row.extend([
+                round(best_mm, 2) if best_mm >= 0 else "", best_site,
+                round(best_cape, 1) if best_cape >= 0 else "", best_cape_site])
             writer.writerow(row)
 
     print(f"Wrote {long_path} ({len(all_days) * len(SITES)} site-days)")
     print(f"Wrote {wide_path} ({len(all_days)} days x {len(SITES)} sites)")
-    # Quick headline: the ten most intense downpours anywhere in the catchment.
+    # Quick headline: the ten most intense downpours anywhere in the catchment,
+    # with the CAPE at that hour (a rough convective flag: >~500 J/kg is a
+    # thunderstorm-favourable atmosphere).
     peaks = []
     for day in all_days:
         for name in site_names:
             if day in per_site[name]:
-                peaks.append((per_site[name][day][1], day, name))
+                total, peak_mm, peak_hour, cape_max, cape_at_peak = per_site[name][day]
+                peaks.append((peak_mm, day, name, peak_hour, cape_at_peak))
     peaks.sort(reverse=True)
-    print("Ten most intense single hours in the catchment:")
-    for mm, day, name in peaks[:10]:
-        print(f"  {mm:6.1f} mm/h  {day}  {name}")
+    print("Ten most intense single hours in the catchment (with CAPE that hour):")
+    for mm, day, name, hr, cape in peaks[:10]:
+        flag = " <- convective" if cape >= 500 else ""
+        print(f"  {mm:6.1f} mm/h  {day} {hr:02d}:00  {name:<28} CAPE {cape:6.0f} J/kg{flag}")
     return 0
 
 
