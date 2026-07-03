@@ -20,6 +20,7 @@ from pathlib import Path
 
 WEATHER = "docs/data/conham_weather_daily.csv"
 FEATURES = "docs/data/conham_cso_ecoli_features.csv"
+SAMPLING = "docs/data/conham_sampling_2025_2026.csv"
 DAILY_CSO = "docs/data/conham_cso_daily.csv"
 INTENSITY = "docs/data/rainfall_intensity_daily_max.csv"
 OUTPUT = "docs/data/conham_2025_timeseries.csv"
@@ -36,6 +37,14 @@ def main() -> int:
         for r in csv.DictReader(h):
             if int(r["lookback_days"]) == 7:
                 samples[r["sample_date"]] = {"ecoli": r["e_coli_cfu_per_100ml"]}
+
+    # Intestinal enterococci per sample date, from the combined sampling CSV.
+    entero = {}
+    sampling_path = Path(SAMPLING)
+    if sampling_path.exists():
+        with sampling_path.open(newline="", encoding="utf-8") as h:
+            for r in csv.DictReader(h):
+                entero[r["sample_date"]] = r.get("intestinal_enterococci_cfu_per_100ml", "")
 
     # CSO spill hours. Prefer the continuous DAILY series (conham_cso_daily.csv,
     # from daily_cso.py) so the CSO panels are populated every day; fall back to
@@ -81,6 +90,7 @@ def main() -> int:
         rows.append({
             "date": key,
             "ecoli_cfu_per_100ml": s.get("ecoli", ""),
+            "intestinal_enterococci_cfu_per_100ml": entero.get(key, ""),
             "cso_spill_hours_sameday": hrs(cso[0]),
             "cso_spill_hours_2d": hrs(cso[1]),
             "cso_spill_hours_7d": hrs(cso[2]),
