@@ -145,17 +145,17 @@ def run_probe(args) -> int:
     isn = "https://environment.data.gov.uk/data/bathing-water-quality/in-season.json"
     guess = ID_BASE + args.eubwid
     candidates = [
-        ("1 bathing-water list shape (_pageSize=1)", f"{bw}.json?_pageSize=1"),
-        ("2 find Ilkley by name", f"{bw}.json?name={q('River Wharfe at Ilkley')}&_pageSize=3"),
-        ("3 find Ilkley by search", f"{bw}.json?_search=Ilkley&_pageSize=3"),
-        ("4 in-season bare list (reveals sample fields?)", f"{isn}?_pageSize=2"),
-        ("5 in-season, samplingPoint.bathingWater filter", f"{isn}?samplingPoint.bathingWater={guess}&_pageSize=2"),
-        ("6 in-season, _view=all", f"{isn}?_view=all&_pageSize=2"),
+        # NO _pageSize anywhere -- it forces the item-endpoint check. Dump the
+        # dataset roots to read the real endpoint URIs, and try filters directly.
+        ("1 quality dataset root (FULL)", "https://environment.data.gov.uk/data/bathing-water-quality.json", 9000),
+        ("2 bathing-water dataset root (FULL)", f"{bw}.json", 7000),
+        ("3 find Ilkley by name", f"{bw}.json?name={q('River Wharfe at Ilkley')}", 3000),
+        ("4 in-season, bathingWater filter, no _pageSize", f"{isn}?samplingPoint.bathingWater={guess}", 2500),
     ]
-    for name, url in candidates:
-        code, info = _try(url, snippet=1600)
+    for name, url, snip in candidates:
+        code, info = _try(url, snippet=snip)
         print(f"\n### {name}\n{url}\n-> HTTP {code}\n{info}")
-    print("\nPaste this back. #2/#3 give Ilkley's eubwid + samplingPoint; #4/#5/#6 reveal the sample field names and the working filter.")
+    print("\nPaste this back. #1 lists the real in-season endpoint URIs in its 'subset'; #2/#3 show how to find a bathing water and its samplingPoint.")
     return 0
 
 
