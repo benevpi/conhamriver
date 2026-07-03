@@ -15,6 +15,8 @@ they plot as weekly markers over the daily weather lines. Standard library only.
 from __future__ import annotations
 
 import csv
+import math
+import statistics
 from datetime import date, timedelta
 from pathlib import Path
 
@@ -24,6 +26,27 @@ SAMPLING = "docs/data/conham_sampling_2025_2026.csv"
 DAILY_CSO = "docs/data/conham_cso_daily.csv"
 INTENSITY = "docs/data/rainfall_intensity_daily_max.csv"
 OUTPUT = "docs/data/conham_2025_timeseries.csv"
+
+# UK Bathing Water Directive (2006/7/EC) classification, INLAND waters. Classes
+# are decided from log-normal percentiles of the sample set: the 95-percentile
+# (z=1.65) for Excellent/Good and the 90-percentile (z=1.282) for Sufficient.
+CLASS_RANK = {0: "excellent", 1: "good", 2: "sufficient", 3: "poor"}
+MIN_SAMPLES_TO_CLASSIFY = 5  # percentiles are meaningless with too few points
+
+
+def _percentile(values: list[float], z: float) -> float:
+    """Log-normal percentile used by the Directive: antilog(mean + z*sd)."""
+    logs = [math.log10(v) for v in values]
+    return 10 ** (statistics.fmean(logs) + z * statistics.stdev(logs))
+
+
+def bathing_class(ec: list[float], ent: list[float]) -> int:
+    """Worse (higher rank) of the E. coli and enterococci classes; 0=Excellent..3=Poor."""
+    ec95, ec90 = _percentile(ec, 1.65), _percentile(ec, 1.282)
+    en95, en90 = _percentile(ent, 1.65), _percentile(ent, 1.282)
+    ec_c = 0 if ec95 <= 500 else 1 if ec95 <= 1000 else 2 if ec90 <= 900 else 3
+    en_c = 0 if en95 <= 200 else 1 if en95 <= 400 else 2 if en90 <= 330 else 3
+    return max(ec_c, en_c)
 
 
 def main() -> int:
@@ -45,6 +68,20 @@ def main() -> int:
         with sampling_path.open(newline="", encoding="utf-8") as h:
             for r in csv.DictReader(h):
                 entero[r["sample_date"]] = r.get("intestinal_enterococci_cfu_per_100ml", "")
+
+    # UK bathing-water class AS OF each sample date, from the percentiles of all
+    # samples up to and including it (expanding window -- the causal "rating so
+    # far"). Takes the worse of the E. coli and enterococci classes.
+    classes = {}
+    ec_hist, en_hist = [], []
+    for sd in sorted(samples):
+        try:
+            ec_hist.append(float(samples[sd]["ecoli"]))
+            en_hist.append(float(entero.get(sd, "")))
+        except ValueError:
+            continue
+        if len(ec_hist) >= MIN_SAMPLES_TO_CLASSIFY:
+            classes[sd] = CLASS_RANK[bathing_class(ec_hist, en_hist)]
 
     # CSO spill hours. Prefer the continuous DAILY series (conham_cso_daily.csv,
     # from daily_cso.py) so the CSO panels are populated every day; fall back to
@@ -91,6 +128,7 @@ def main() -> int:
             "date": key,
             "ecoli_cfu_per_100ml": s.get("ecoli", ""),
             "intestinal_enterococci_cfu_per_100ml": entero.get(key, ""),
+            "bathing_class": classes.get(key, ""),
             "cso_spill_hours_sameday": hrs(cso[0]),
             "cso_spill_hours_2d": hrs(cso[1]),
             "cso_spill_hours_7d": hrs(cso[2]),
