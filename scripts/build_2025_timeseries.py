@@ -5,7 +5,9 @@ Combines, on a daily calendar for 2025:
 - E. coli (CFU/100ml) and CSO amount (spill hours in the prior 7 days) at each
   weekly sample date, from ``docs/data/conham_cso_ecoli_features.csv``;
 - daily rainfall, mean temperature and (if fetched) max wind speed, from
-  ``docs/data/conham_weather_daily.csv``.
+  ``docs/data/conham_weather_daily.csv``;
+- the catchment-wide daily peak CAPE (thunderstorm instability, J/kg) from
+  ``docs/data/rainfall_intensity_daily_max.csv`` if present.
 
 E. coli and CSO columns are populated only on sample dates (blank otherwise) so
 they plot as weekly markers over the daily weather lines. Standard library only.
@@ -18,6 +20,7 @@ from pathlib import Path
 
 WEATHER = "docs/data/conham_weather_daily.csv"
 FEATURES = "docs/data/conham_cso_ecoli_features.csv"
+INTENSITY = "docs/data/rainfall_intensity_daily_max.csv"
 OUTPUT = "docs/data/conham_2025_timeseries.csv"
 
 
@@ -38,6 +41,15 @@ def main() -> int:
                 r["sample_date"], {"ecoli": r["e_coli_cfu_per_100ml"]})
             s[f"cso{lb}"] = r["spill_hours_total"]
 
+    # Catchment-wide daily peak CAPE (optional; blank if the intensity fetch
+    # hasn't been run/committed).
+    cape = {}
+    intensity_path = Path(INTENSITY)
+    if intensity_path.exists():
+        with intensity_path.open(newline="", encoding="utf-8") as h:
+            for r in csv.DictReader(h):
+                cape[r["date"]] = r.get("catchment_max_cape_j_per_kg", "")
+
     days = sorted(d for d in weather if d.startswith("2025"))
     start, end = date.fromisoformat(days[0]), date.fromisoformat(days[-1])
     rows = []
@@ -57,6 +69,7 @@ def main() -> int:
             "temp_mean_c": w.get("temp_mean_c", ""),
             # Populated once wind is added to the weather fetch (blank until then).
             "wind_max_kmh": w.get("windspeed_10m_max_kmh", w.get("wind_max_kmh", "")),
+            "cape_max_j_per_kg": cape.get(key, ""),
         })
         d += timedelta(days=1)
 
@@ -67,8 +80,10 @@ def main() -> int:
         writer.writerows(rows)
     n_samples = sum(1 for r in rows if r["ecoli_cfu_per_100ml"])
     has_wind = any(r["wind_max_kmh"] for r in rows)
+    has_cape = any(r["cape_max_j_per_kg"] for r in rows)
     print(f"Wrote {out} ({len(rows)} days, {n_samples} sample dates)")
     print(f"  wind data present: {has_wind}")
+    print(f"  CAPE data present: {has_cape}")
     return 0
 
 
