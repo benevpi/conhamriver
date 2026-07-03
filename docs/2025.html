@@ -14,7 +14,7 @@
   <div class="controls"><button id="themeBtn" type="button">Toggle dark / light</button><button id="tblBtn" type="button">Show sample table</button></div>
   <div id="panels"></div>
   <div id="tableWrap" hidden></div>
-  <p class="foot"><em>E.&nbsp;coli</em> is capped at 1000 CFU/100ml (the lab maximum, dashed line). <b>CSO</b> = summed hours of upstream spilling on the sample day and in the 2 and 7 days before it (each panel on its own scale — note the differing y-axes). Rain &amp; temperature are ERA5 daily values for Conham. <b>Peak rainfall</b> is the heaviest single hour (mm/hour) anywhere in the Bristol Avon catchment that day — a marker for localised, potentially convective downpours that daily totals hide. <b>Peak CAPE</b> is the highest hourly CAPE (convective/thunderstorm instability) anywhere in the Bristol Avon catchment that day — high CAPE means storm-favourable air. Hover for values. Source: <code>docs/data/conham_2025_timeseries.csv</code>.</p>
+  <p class="foot"><em>E.&nbsp;coli</em> is capped at 1000 CFU/100ml (the lab maximum, dashed line). <b>CSO</b> = cumulative hours of upstream spilling summed over the sample day, the prior 2 days and the prior 7 days (all three panels share one y-axis, so the longer windows are always ≥ the shorter ones). Rain &amp; temperature are ERA5 daily values for Conham. <b>Peak rainfall</b> is the heaviest single hour (mm/hour) anywhere in the Bristol Avon catchment that day — a marker for localised, potentially convective downpours that daily totals hide. <b>Peak CAPE</b> is the highest hourly CAPE (convective/thunderstorm instability) anywhere in the Bristol Avon catchment that day — high CAPE means storm-favourable air. Hover for values. Source: <code>docs/data/conham_2025_timeseries.csv</code>.</p>
 </div>
 <style>
 :root{--surface:#fcfcfb;--ink:#0b0b0b;--ink2:#52514e;--grid:#e7e6e2;--axis:#b8b7b2;
@@ -55,9 +55,9 @@ let W=880;
 function xOf(ds){return M.l+(Date.parse(ds)-t0)/(t1-t0)*(W-M.l-M.r);}
 const panels=[
  {key:'e',label:'E. coli',unit:'CFU/100ml',color:'--ecoli',h:150,kind:'ecoli',max:1000,ticks:[0,250,500,750,1000]},
- {key:'cs',label:'CSO spilling',unit:'hours, same day',color:'--cso',h:90,kind:'bar',max:110,ticks:[0,50,100]},
- {key:'c2',label:'CSO spilling',unit:'hours, prior 2 days',color:'--cso',h:90,kind:'bar',max:350,ticks:[0,150,300]},
- {key:'c',label:'CSO spilling',unit:'hours, prior 7 days',color:'--cso',h:90,kind:'bar',max:1150,ticks:[0,500,1000]},
+ {key:'cs',label:'CSO spilling',unit:'hours, same day',color:'--cso',h:90,kind:'bar',max:1150,ticks:[0,500,1000]},
+ {key:'c2',label:'CSO spilling',unit:'hours, prior 2 days (cumulative)',color:'--cso',h:90,kind:'bar',max:1150,ticks:[0,500,1000]},
+ {key:'c',label:'CSO spilling',unit:'hours, prior 7 days (cumulative)',color:'--cso',h:90,kind:'bar',max:1150,ticks:[0,500,1000]},
  {key:'r',label:'Rainfall',unit:'mm/day',color:'--rain',h:100,kind:'dailybar',max:40,ticks:[0,20,40]},
  {key:'pi',label:'Peak rainfall',unit:'mm/hour, catchment heaviest hour',color:'--peak',h:100,kind:'dailybar',max:16,ticks:[0,5,10,15]},
  {key:'t',label:'Temperature',unit:'°C daily mean',color:'--temp',h:100,kind:'line',max:28,min:0,ticks:[0,10,20]},
