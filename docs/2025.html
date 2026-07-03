@@ -103,10 +103,13 @@ function render(){
       // "rating so far"). Colours: Excellent green, Good yellow, Sufficient
       // orange, Poor red. Drawn first so lines and dots sit on top.
       const CLScol={excellent:'46,160,90',good:'207,168,20',sufficient:'230,126,34',poor:'214,69,65'};
-      const classed=DATA.filter(d=>d.cls);
+      const CLSname={excellent:'Excellent',good:'Good',sufficient:'Sufficient',poor:'Poor'};
+      const classed=DATA.filter(d=>d.cls);const runs=[];
       classed.forEach((d,i)=>{
         const x0=xOf(d.d),x1=(i+1<classed.length)?xOf(classed[i+1].d):(W-M.r);
         svg.appendChild(el('rect',{x:x0,y:M.t,width:x1-x0,height:yBase-M.t,fill:'rgba('+CLScol[d.cls]+',0.17)'}));
+        if(runs.length&&runs[runs.length-1].cls===d.cls)runs[runs.length-1].x1=x1;
+        else runs.push({cls:d.cls,x0:x0,x1:x1});
       });
       const yc=yScale(1000);svg.appendChild(el('line',{x1:M.l,y1:yc,x2:W-M.r,y2:yc,stroke:cssv('--cap'),'stroke-width':1,'stroke-dasharray':'4 4'}));
       // Two sampled series on one axis: E. coli and intestinal enterococci.
@@ -116,6 +119,14 @@ function render(){
         svg.appendChild(el('polyline',{points:SS.map(d=>xOf(d.d)+','+yScale(Math.min(d[s.k],p.max))).join(' '),fill:'none',stroke:sc,'stroke-width':2,'stroke-linejoin':'round'}));
         SS.forEach(d=>svg.appendChild(el('circle',{cx:xOf(d.d),cy:yScale(Math.min(d[s.k],p.max)),r:4,fill:sc,stroke:cssv('--surface'),'stroke-width':1.5})));
       });
+      // Classification labels last, so they read on top of the lines/dots.
+      // Vertical + centred on each contiguous run (and the leading gap), a slight
+      // surface halo for legibility over the coloured band.
+      const bandLabel=(x0,x1,text)=>{const t=txt(0,0,text,{'text-anchor':'middle','font-size':'0.64rem','font-weight':700,fill:cssv('--ink'),stroke:cssv('--surface'),'stroke-width':2.6,'paint-order':'stroke','stroke-linejoin':'round'});
+        t.setAttribute('transform','translate('+((x0+x1)/2)+','+((M.t+yBase)/2)+') rotate(-90)');svg.appendChild(t);};
+      runs.forEach(r=>bandLabel(r.x0,r.x1,CLSname[r.cls]));
+      const leadX=classed.length?xOf(classed[0].d):(W-M.r);
+      if(leadX-M.l>26)bandLabel(M.l,leadX,'Not enough data');
       // Legend (two series -> legend required), top-right of the panel.
       const leg=[['E. coli','--ecoli'],['Ent. enterococci','--ent']];
       let lx=W-M.r;
