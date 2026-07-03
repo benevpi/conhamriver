@@ -14,7 +14,7 @@
   <div class="controls"><button id="themeBtn" type="button">Toggle dark / light</button><button id="tblBtn" type="button">Show sample table</button></div>
   <div id="panels"></div>
   <div id="tableWrap" hidden></div>
-  <p class="foot">Both <em>E.&nbsp;coli</em> and intestinal enterococci are on the top panel, capped at 1000 CFU/100ml (the lab maximum, dashed line). <b>CSO</b> = hours of upstream spilling, shown every day: on the day itself, and as trailing 2-day and 7-day cumulative sums (all three panels share one y-axis, so the longer windows are always ≥ the shorter ones). Daily totals sum every upstream outfall's spill hours, so a single day can exceed 24. Rain &amp; temperature are ERA5 daily values for Conham. <b>Peak rainfall</b> is the heaviest single hour (mm/hour) anywhere in the Bristol Avon catchment that day — a marker for localised, potentially convective downpours that daily totals hide. <b>Peak CAPE</b> is the highest hourly CAPE (convective/thunderstorm instability) anywhere in the Bristol Avon catchment that day — high CAPE means storm-favourable air. Hover for values. Source: <code>docs/data/conham_2025_timeseries.csv</code>.</p>
+  <p class="foot">Both <em>E.&nbsp;coli</em> and intestinal enterococci are on the top panel, capped at 1000 CFU/100ml (the lab maximum, dashed line). The <b>green→red bands</b> are UK bathing-water classes (Bathing Water Directive, inland waters): Excellent ≤200, Good ≤400, Sufficient ≤800, Poor above. They use the <b>stricter (lower) of the two indicators</b> — intestinal enterococci — so a reading's band is the tougher standard it must clear; the E.&nbsp;coli limits (≤500 / ≤1000) are looser. The Sufficient/Poor split above the Good limit is a single-sample approximation (the Directive classifies over multi-year percentiles, not single samples). <b>CSO</b> = hours of upstream spilling, shown every day: on the day itself, and as trailing 2-day and 7-day cumulative sums (all three panels share one y-axis, so the longer windows are always ≥ the shorter ones). Daily totals sum every upstream outfall's spill hours, so a single day can exceed 24. Rain &amp; temperature are ERA5 daily values for Conham. <b>Peak rainfall</b> is the heaviest single hour (mm/hour) anywhere in the Bristol Avon catchment that day — a marker for localised, potentially convective downpours that daily totals hide. <b>Peak CAPE</b> is the highest hourly CAPE (convective/thunderstorm instability) anywhere in the Bristol Avon catchment that day — high CAPE means storm-favourable air. Hover for values. Source: <code>docs/data/conham_2025_timeseries.csv</code>.</p>
 </div>
 <style>
 :root{--surface:#fcfcfb;--ink:#0b0b0b;--ink2:#52514e;--grid:#e7e6e2;--axis:#b8b7b2;
@@ -97,6 +97,19 @@ function render(){
       const pts=DATA.filter(d=>d[p.key]!=null).map(d=>xOf(d.d)+','+yScale(Math.min(d[p.key],p.max))).join(' ');
       svg.appendChild(el('polyline',{points:pts,fill:'none',stroke:col,'stroke-width':2,'stroke-linejoin':'round'}));
     }else if(p.kind==='ecoli'){
+      // UK bathing-water classification bands (Bathing Water Directive 2006/7/EC,
+      // inland waters). Uses the STRICTER of the two indicators' thresholds --
+      // intestinal enterococci (200 / 400 CFU) -- so the band a sample sits in is
+      // the tougher standard it must clear. Sufficient/Poor split above the Good
+      // limit is a single-sample approximation (the Directive sets Poor via
+      // percentiles). Drawn first so lines and dots sit on top.
+      const bands=[[0,200,'46,160,90','Excellent'],[200,400,'207,168,20','Good'],
+                   [400,800,'230,126,34','Sufficient'],[800,1000,'214,69,65','Poor']];
+      bands.forEach(([lo,hi,rgb,name])=>{
+        const yt=yScale(hi),yb=yScale(lo);
+        svg.appendChild(el('rect',{x:M.l,y:yt,width:W-M.r-M.l,height:yb-yt,fill:'rgba('+rgb+',0.15)'}));
+        svg.appendChild(txt(W-M.r-5,(yt+yb)/2+3.5,name,{'text-anchor':'end','font-size':'0.62rem',fill:cssv('--ink2'),opacity:0.8}));
+      });
       const yc=yScale(1000);svg.appendChild(el('line',{x1:M.l,y1:yc,x2:W-M.r,y2:yc,stroke:cssv('--cap'),'stroke-width':1,'stroke-dasharray':'4 4'}));
       // Two sampled series on one axis: E. coli and intestinal enterococci.
       const series=[{k:'e',c:'--ecoli'},{k:'en',c:'--ent'}];
