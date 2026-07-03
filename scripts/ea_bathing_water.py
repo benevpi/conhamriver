@@ -139,22 +139,23 @@ def _try(url: str, snippet: int = 1200) -> tuple[int, str]:
 
 
 def run_probe(args) -> int:
-    """Discover the correct list endpoint + field names for the EA sample data."""
-    uri = ID_BASE + args.eubwid
-    y = args.year
-    base = "https://environment.data.gov.uk/data/bathing-water-quality"
+    """Discover Ilkley's eubwid/sampling point and the in-season filter/field names."""
+    q = urllib.parse.quote
+    bw = "https://environment.data.gov.uk/data/bathing-water"
+    isn = "https://environment.data.gov.uk/data/bathing-water-quality/in-season.json"
+    guess = ID_BASE + args.eubwid
     candidates = [
-        ("1 dataset root (lists endpoints)", f"{base}.json"),
-        ("2 in-season, filter, NO _pageSize", f"{base}/in-season.json?year={y}&samplingPoint.bathingWater={uri}"),
-        ("3 in-season, year only, NO _pageSize", f"{base}/in-season.json?year={y}"),
-        ("4 in-season/sample sub-path", f"{base}/in-season/sample.json?year={y}&samplingPoint.bathingWater={uri}"),
-        ("5 sample list, bathingWater filter", f"{base}/sample.json?bathingWater={uri}"),
-        ("6 bathing-water item (find its sampling point)", f"{ID_BASE}{args.eubwid}.json"),
+        ("1 bathing-water list shape (_pageSize=1)", f"{bw}.json?_pageSize=1"),
+        ("2 find Ilkley by name", f"{bw}.json?name={q('River Wharfe at Ilkley')}&_pageSize=3"),
+        ("3 find Ilkley by search", f"{bw}.json?_search=Ilkley&_pageSize=3"),
+        ("4 in-season bare list (reveals sample fields?)", f"{isn}?_pageSize=2"),
+        ("5 in-season, samplingPoint.bathingWater filter", f"{isn}?samplingPoint.bathingWater={guess}&_pageSize=2"),
+        ("6 in-season, _view=all", f"{isn}?_view=all&_pageSize=2"),
     ]
     for name, url in candidates:
-        code, info = _try(url)
+        code, info = _try(url, snippet=1600)
         print(f"\n### {name}\n{url}\n-> HTTP {code}\n{info}")
-    print("\nPaste this whole output back; variant 1 or 6 should reveal the real list-endpoint name / sampling-point URI.")
+    print("\nPaste this back. #2/#3 give Ilkley's eubwid + samplingPoint; #4/#5/#6 reveal the sample field names and the working filter.")
     return 0
 
 
