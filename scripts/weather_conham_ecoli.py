@@ -91,7 +91,7 @@ def fetch_weather(start: date, end: date, lat: float = CONHAM_LAT, lon: float = 
         "longitude": lon,
         "start_date": start.isoformat(),
         "end_date": end.isoformat(),
-        "daily": "precipitation_sum,rain_sum,temperature_2m_mean,temperature_2m_max,temperature_2m_min",
+        "daily": "precipitation_sum,rain_sum,temperature_2m_mean,temperature_2m_max,temperature_2m_min,windspeed_10m_max",
         "timezone": "UTC",
     }
     url = ARCHIVE_URL + "?" + urllib.parse.urlencode(params)
@@ -111,6 +111,7 @@ def fetch_weather(start: date, end: date, lat: float = CONHAM_LAT, lon: float = 
                 "temp_mean_c": daily.get("temperature_2m_mean", [None] * len(times))[i],
                 "temp_max_c": daily.get("temperature_2m_max", [None] * len(times))[i],
                 "temp_min_c": daily.get("temperature_2m_min", [None] * len(times))[i],
+                "windspeed_10m_max_kmh": daily.get("windspeed_10m_max", [None] * len(times))[i],
             }
         )
     return rows
@@ -119,7 +120,7 @@ def fetch_weather(start: date, end: date, lat: float = CONHAM_LAT, lon: float = 
 def _write_weather(rows: list[dict], path: Path) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     with path.open("w", newline="", encoding="utf-8") as handle:
-        writer = csv.DictWriter(handle, fieldnames=["date", "precipitation_mm", "rain_mm", "temp_mean_c", "temp_max_c", "temp_min_c"])
+        writer = csv.DictWriter(handle, fieldnames=["date", "precipitation_mm", "rain_mm", "temp_mean_c", "temp_max_c", "temp_min_c", "windspeed_10m_max_kmh"])
         writer.writeheader()
         writer.writerows(rows)
 
