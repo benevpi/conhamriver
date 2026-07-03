@@ -27,21 +27,62 @@ from pathlib import Path
 from build_2025_timeseries import bathing_class, CLASS_RANK, MIN_SAMPLES_TO_CLASSIFY
 
 
+def _pick(fieldnames: list[str], *must_contain_any) -> str | None:
+    """Find a column whose lowercased name contains any of the given substrings."""
+    for f in fieldnames:
+        low = f.lower()
+        if any(s in low for s in must_contain_any):
+            return f
+    return None
+
+
+def _to_number(v):
+    """Parse a count. Handles '<10', '> 1000', blanks and stray text."""
+    if v is None:
+        return None
+    s = str(v).strip().lstrip("<>=~ ").replace(",", "")
+    if not s:
+        return None
+    num = ""
+    for ch in s:
+        if ch.isdigit() or ch == ".":
+            num += ch
+        elif num:
+            break
+    try:
+        return float(num) if num else None
+    except ValueError:
+        return None
+
+
 def load_samples(path: Path) -> list[dict]:
-    rows = []
-    with path.open(newline="", encoding="utf-8") as h:
-        for r in csv.DictReader(h):
-            def num(key):
-                v = r.get(key, "")
-                try:
-                    return float(v)
-                except (TypeError, ValueError):
-                    return None
-            rows.append({
-                "d": r["sample_date"],
-                "e": num("e_coli_cfu_per_100ml"),
-                "en": num("intestinal_enterococci_cfu_per_100ml"),
-            })
+    """Read a sampling CSV. Accepts our exact columns *or* the EA/Swimfo download
+    headers (e.g. 'Escherichia coli (E. coli) cfu/100ml', 'Sample Date')."""
+    with path.open(newline="", encoding="utf-8-sig") as h:
+        reader = csv.DictReader(h)
+        fields = reader.fieldnames or []
+        # date: prefer a header with 'date' but not 'time'; ecoli via 'coli'; ent via 'enteroc'.
+        dcol = _pick(fields, "sample_date") or _pick([f for f in fields if "time" not in f.lower()], "date") or _pick(fields, "date")
+        ecol = _pick(fields, "e_coli", "e. coli", "escherichia", "coli")
+        encol = _pick(fields, "enteroc")
+        if not (dcol and ecol and encol):
+            raise SystemExit(
+                f"Could not identify columns in {path}.\n  headers: {fields}\n"
+                f"  matched date={dcol!r} ecoli={ecol!r} enterococci={encol!r}\n"
+                "Rename the columns or tell me the header row."
+            )
+        rows = []
+        for r in reader:
+            raw = str(r.get(dcol, "")).strip()
+            day = raw[:10]
+            # Normalise dd/mm/yyyy -> yyyy-mm-dd if needed.
+            if "/" in day:
+                p = day.split("/")
+                if len(p) == 3:
+                    day = f"{p[2]}-{p[1].zfill(2)}-{p[0].zfill(2)}"
+            if len(day) != 10:
+                continue
+            rows.append({"d": day, "e": _to_number(r.get(ecol)), "en": _to_number(r.get(encol))})
     rows.sort(key=lambda x: x["d"])
     return rows
 
