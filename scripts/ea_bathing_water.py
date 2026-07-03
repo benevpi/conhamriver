@@ -140,22 +140,19 @@ def _try(url: str, snippet: int = 1200) -> tuple[int, str]:
 
 def run_probe(args) -> int:
     """Discover Ilkley's eubwid/sampling point and the in-season filter/field names."""
-    q = urllib.parse.quote
-    bw = "https://environment.data.gov.uk/data/bathing-water"
-    isn = "https://environment.data.gov.uk/data/bathing-water-quality/in-season.json"
-    guess = ID_BASE + args.eubwid
+    uri = ID_BASE + args.eubwid
+    eaew = "https://environment.data.gov.uk/data/bathing-water-quality/eaew/in-season.json"
     candidates = [
-        # NO _pageSize anywhere -- it forces the item-endpoint check. Dump the
-        # dataset roots to read the real endpoint URIs, and try filters directly.
-        ("1 quality dataset root (FULL)", "https://environment.data.gov.uk/data/bathing-water-quality.json", 9000),
-        ("2 bathing-water dataset root (FULL)", f"{bw}.json", 7000),
-        ("3 find Ilkley by name", f"{bw}.json?name={q('River Wharfe at Ilkley')}", 3000),
-        ("4 in-season, bathingWater filter, no _pageSize", f"{isn}?samplingPoint.bathingWater={guess}", 2500),
+        # The England/Wales in-season sample list endpoint, filtered by bathing water.
+        ("1 eaew/in-season by bathingWater + year", f"{eaew}?samplingPoint.bathingWater={uri}&year={args.year}", 3000),
+        ("2 eaew/in-season by bathingWater (all years)", f"{eaew}?samplingPoint.bathingWater={uri}", 3000),
+        ("3 eaew/in-season bare (reveals sample fields)", f"{eaew}", 3000),
     ]
     for name, url, snip in candidates:
         code, info = _try(url, snippet=snip)
         print(f"\n### {name}\n{url}\n-> HTTP {code}\n{info}")
-    print("\nPaste this back. #1 lists the real in-season endpoint URIs in its 'subset'; #2/#3 show how to find a bathing water and its samplingPoint.")
+    print(f"\nUsing eubwid '{args.eubwid}'. If these 404/empty, re-run with the real id from the Swimfo\n"
+          "profile URL: python scripts/ea_bathing_water.py probe --eubwid <site> --year 2023")
     return 0
 
 
