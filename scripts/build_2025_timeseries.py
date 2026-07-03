@@ -41,14 +41,15 @@ def main() -> int:
                 r["sample_date"], {"ecoli": r["e_coli_cfu_per_100ml"]})
             s[f"cso{lb}"] = r["spill_hours_total"]
 
-    # Catchment-wide daily peak CAPE (optional; blank if the intensity fetch
-    # hasn't been run/committed).
-    cape = {}
+    # Catchment-wide daily peak CAPE and peak rainfall intensity (optional; blank
+    # if the intensity fetch hasn't been run/committed).
+    cape, peak_rain = {}, {}
     intensity_path = Path(INTENSITY)
     if intensity_path.exists():
         with intensity_path.open(newline="", encoding="utf-8") as h:
             for r in csv.DictReader(h):
                 cape[r["date"]] = r.get("catchment_max_cape_j_per_kg", "")
+                peak_rain[r["date"]] = r.get("catchment_max_mm_per_h", "")
 
     days = sorted(d for d in weather if d.startswith("2025"))
     start, end = date.fromisoformat(days[0]), date.fromisoformat(days[-1])
@@ -66,6 +67,7 @@ def main() -> int:
             "cso_spill_hours_2d": hrs(s.get("cso2")),
             "cso_spill_hours_7d": hrs(s.get("cso7")),
             "rain_mm": w.get("precipitation_mm", ""),
+            "peak_rain_mm_per_h": peak_rain.get(key, ""),
             "temp_mean_c": w.get("temp_mean_c", ""),
             # Populated once wind is added to the weather fetch (blank until then).
             "wind_max_kmh": w.get("windspeed_10m_max_kmh", w.get("wind_max_kmh", "")),
