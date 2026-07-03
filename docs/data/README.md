@@ -98,26 +98,35 @@ across the Bristol Avon catchment (Bristol, Bath, the Chew and Frome
 sub-catchments and the upper-Avon headwaters). The point is to catch localised
 convective **thunderstorms** — a cell can dump heavy rain on one tributary while
 the rest of the catchment stays dry, which a single Conham point and daily totals
-both miss. It pulls **hourly** precipitation and **CAPE** (Convective Available
-Potential Energy, a thunderstorm-likelihood proxy) from the Open-Meteo ERA5
-archive — a heavy rain hour on a high-CAPE day is likely a convective storm cell:
+both miss. It pulls **hourly** precipitation (from the Open-Meteo ERA5 reanalysis
+archive) plus **CAPE** (Convective Available Potential Energy, a
+thunderstorm-likelihood proxy) and best-effort **lightning potential** (LPI) —
+the last two from the Open-Meteo Historical Forecast API, because the reanalysis
+archive carries neither. A heavy rain hour on a high-CAPE day is likely a
+convective storm cell:
 
 ```bash
 python scripts/rainfall_intensity.py sites     # list the catchment sites (no network)
 python scripts/rainfall_intensity.py fetch     # Open-Meteo hourly -> the two CSVs below
 ```
 
-`fetch` needs outbound access to `archive-api.open-meteo.com`; run it where that
-is allowed and commit both outputs:
+`fetch` needs outbound access to `archive-api.open-meteo.com` and
+`historical-forecast-api.open-meteo.com`; run it where that is allowed and commit
+both outputs:
 
 - `rainfall_intensity_by_site.csv` — tidy long form: `date, site, lat, lon,
   rain_total_mm, rain_max_mm_per_h, peak_hour, cape_max_j_per_kg,
-  cape_at_peak_hour_j_per_kg`;
+  cape_at_peak_hour_j_per_kg, lightning_potential_max`;
 - `rainfall_intensity_daily_max.csv` — wide: one row per day, one column per site
-  of the peak hourly intensity, plus `catchment_max_mm_per_h` /
-  `catchment_max_site` (the worst downpour anywhere in the catchment that day and
-  where it hit) and `catchment_max_cape_j_per_kg` / `catchment_max_cape_site`
-  (the most unstable/thunderstorm-favourable point that day).
+  of the peak hourly intensity, plus catchment-wide summaries of the worst
+  downpour (`catchment_max_mm_per_h` / `catchment_max_site`), the highest CAPE
+  (`catchment_max_cape_j_per_kg` / `catchment_max_cape_site`) and the highest
+  lightning potential (`catchment_max_lightning_potential` /
+  `catchment_max_lightning_site`), each with the site it occurred at.
+
+Note: `lightning_potential` is best-effort — only some forecast models produce it
+and UK coverage isn't guaranteed, so those columns may come back blank (the fetch
+prints a note if so). CAPE is the reliable convective signal.
 
 By default `fetch` covers the E. coli sampling window (first sample minus a
 buffer .. last sample); override with `--start`/`--end`. Caveat: ERA5 is a
