@@ -113,6 +113,46 @@ def fetch_year(eubwid: str, year: int, page_size: int) -> list[dict]:
     return items
 
 
+def _try(url: str) -> tuple[int, str]:
+    """GET a URL, returning (status, body-snippet-or-json-summary)."""
+    try:
+        with urllib.request.urlopen(url, timeout=60) as resp:
+            body = resp.read().decode("utf-8", "replace")
+    except urllib.error.HTTPError as exc:
+        return exc.code, exc.read().decode("utf-8", "replace")[:400]
+    except urllib.error.URLError as exc:
+        return 0, f"URLError: {exc}"
+    try:
+        data = json.loads(body)
+        result = data.get("result", data)
+        items = result.get("items", []) if isinstance(result, dict) else []
+        if items:
+            keys = sorted(items[0].keys())
+            return 200, f"OK, {len(items)} item(s). first-item keys: {keys}\nfirst item: {json.dumps(items[0])[:900]}"
+        return 200, f"OK but 0 items. top-level keys: {sorted(data.keys()) if isinstance(data, dict) else type(data)}"
+    except json.JSONDecodeError:
+        return 200, "OK but not JSON: " + body[:200]
+
+
+def run_probe(args) -> int:
+    """Try several candidate endpoint shapes and report which returns samples."""
+    uri = ID_BASE + args.eubwid
+    y = args.year
+    candidates = [
+        ("A in-season +bathingWater filter", f"https://environment.data.gov.uk/data/bathing-water-quality/in-season.json?year={y}&_pageSize=2&samplingPoint.bathingWater={uri}"),
+        ("B in-season +samplingPoint filter", f"https://environment.data.gov.uk/data/bathing-water-quality/in-season.json?year={y}&_pageSize=2&samplingPoint.bathingWater.eubwidNotation={args.eubwid}"),
+        ("C in-season year only", f"https://environment.data.gov.uk/data/bathing-water-quality/in-season.json?year={y}&_pageSize=2"),
+        ("D in-season eubwidNotation", f"https://environment.data.gov.uk/data/bathing-water-quality/in-season.json?year={y}&_pageSize=2&eubwidNotation={args.eubwid}"),
+        ("E sample resource", f"https://environment.data.gov.uk/data/bathing-water-quality/sample.json?year={y}&_pageSize=2"),
+        ("F doc host", f"https://environment.data.gov.uk/doc/bathing-water-quality/in-season.json?year={y}&_pageSize=2"),
+    ]
+    for name, url in candidates:
+        code, info = _try(url)
+        print(f"\n### {name}\n{url}\n-> HTTP {code}\n{info}")
+    print("\nPaste this whole output back and the fetcher will be pointed at whichever variant returns items with E.coli/enterococci fields.")
+    return 0
+
+
 def run_fetch(args) -> int:
     lo, hi = (args.years.split("-") + [args.years])[:2]
     years = range(int(lo), int(hi) + 1)
@@ -121,6 +161,13 @@ def run_fetch(args) -> int:
     for year in years:
         try:
             items = fetch_year(args.eubwid, year, args.page_size)
+        except urllib.error.HTTPError as exc:
+            body = exc.read().decode("utf-8", "replace")[:600]
+            raise SystemExit(
+                f"EA API returned HTTP {exc.code} for:\n  {API}?...year={year}...\n{body}\n\n"
+                "The query shape is wrong for this API. Run `python scripts/ea_bathing_water.py "
+                "probe` and paste the output so the endpoint can be corrected."
+            )
         except urllib.error.URLError as exc:
             raise SystemExit(
                 f"Could not reach the EA API ({API}): {exc}.\n"
@@ -179,6 +226,11 @@ def build_parser() -> argparse.ArgumentParser:
     f.add_argument("--page-size", type=int, default=500)
     f.add_argument("--debug", action="store_true", help="Dump the first raw item for field-name checking")
     f.set_defaults(func=run_fetch)
+
+    pr = sub.add_parser("probe", help="Try candidate API endpoint shapes and report which works")
+    pr.add_argument("--eubwid", default=DEFAULT_EUBWID)
+    pr.add_argument("--year", default="2023")
+    pr.set_defaults(func=run_probe)
     return parser
 
 
