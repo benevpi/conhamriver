@@ -113,13 +113,16 @@ def fetch_year(eubwid: str, year: int, page_size: int) -> list[dict]:
     return items
 
 
-def _try(url: str) -> tuple[int, str]:
+def _try(url: str, snippet: int = 1200) -> tuple[int, str]:
     """GET a URL, returning (status, body-snippet-or-json-summary)."""
     try:
         with urllib.request.urlopen(url, timeout=60) as resp:
             body = resp.read().decode("utf-8", "replace")
     except urllib.error.HTTPError as exc:
-        return exc.code, exc.read().decode("utf-8", "replace")[:400]
+        b = exc.read().decode("utf-8", "replace")
+        import re
+        m = re.search(r"<pre>(.*?)</pre>", b, re.S)
+        return exc.code, (m.group(1).strip() if m else b[:snippet])
     except urllib.error.URLError as exc:
         return 0, f"URLError: {exc}"
     try:
@@ -128,28 +131,30 @@ def _try(url: str) -> tuple[int, str]:
         items = result.get("items", []) if isinstance(result, dict) else []
         if items:
             keys = sorted(items[0].keys())
-            return 200, f"OK, {len(items)} item(s). first-item keys: {keys}\nfirst item: {json.dumps(items[0])[:900]}"
-        return 200, f"OK but 0 items. top-level keys: {sorted(data.keys()) if isinstance(data, dict) else type(data)}"
+            return 200, f"OK, {len(items)} item(s). first-item keys: {keys}\nfirst item: {json.dumps(items[0])[:1100]}"
+        # No items -> show what endpoints/links the resource advertises.
+        return 200, f"OK, no item list. top-level keys: {sorted(data.keys()) if isinstance(data,dict) else type(data)}\n{json.dumps(data)[:snippet]}"
     except json.JSONDecodeError:
-        return 200, "OK but not JSON: " + body[:200]
+        return 200, "OK but not JSON: " + body[:snippet]
 
 
 def run_probe(args) -> int:
-    """Try several candidate endpoint shapes and report which returns samples."""
+    """Discover the correct list endpoint + field names for the EA sample data."""
     uri = ID_BASE + args.eubwid
     y = args.year
+    base = "https://environment.data.gov.uk/data/bathing-water-quality"
     candidates = [
-        ("A in-season +bathingWater filter", f"https://environment.data.gov.uk/data/bathing-water-quality/in-season.json?year={y}&_pageSize=2&samplingPoint.bathingWater={uri}"),
-        ("B in-season +samplingPoint filter", f"https://environment.data.gov.uk/data/bathing-water-quality/in-season.json?year={y}&_pageSize=2&samplingPoint.bathingWater.eubwidNotation={args.eubwid}"),
-        ("C in-season year only", f"https://environment.data.gov.uk/data/bathing-water-quality/in-season.json?year={y}&_pageSize=2"),
-        ("D in-season eubwidNotation", f"https://environment.data.gov.uk/data/bathing-water-quality/in-season.json?year={y}&_pageSize=2&eubwidNotation={args.eubwid}"),
-        ("E sample resource", f"https://environment.data.gov.uk/data/bathing-water-quality/sample.json?year={y}&_pageSize=2"),
-        ("F doc host", f"https://environment.data.gov.uk/doc/bathing-water-quality/in-season.json?year={y}&_pageSize=2"),
+        ("1 dataset root (lists endpoints)", f"{base}.json"),
+        ("2 in-season, filter, NO _pageSize", f"{base}/in-season.json?year={y}&samplingPoint.bathingWater={uri}"),
+        ("3 in-season, year only, NO _pageSize", f"{base}/in-season.json?year={y}"),
+        ("4 in-season/sample sub-path", f"{base}/in-season/sample.json?year={y}&samplingPoint.bathingWater={uri}"),
+        ("5 sample list, bathingWater filter", f"{base}/sample.json?bathingWater={uri}"),
+        ("6 bathing-water item (find its sampling point)", f"{ID_BASE}{args.eubwid}.json"),
     ]
     for name, url in candidates:
         code, info = _try(url)
         print(f"\n### {name}\n{url}\n-> HTTP {code}\n{info}")
-    print("\nPaste this whole output back and the fetcher will be pointed at whichever variant returns items with E.coli/enterococci fields.")
+    print("\nPaste this whole output back; variant 1 or 6 should reveal the real list-endpoint name / sampling-point URI.")
     return 0
 
 
