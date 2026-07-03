@@ -46,6 +46,28 @@ is exploratory: the sampling values are approximate/capped, the EDM dataset is a
 published 2025 snapshot, and the simple models do not control for rainfall,
 river flow, sunlight, temperature, sample time, or travel time.
 
+## Daily CSO series (every day, not just sample dates)
+
+`scripts/daily_cso.py` produces a **continuous daily** CSO spill record so the
+2025 graph can show upstream spilling every day, not only on the 25 E. coli
+sample dates. It queries the same Wessex Water EDM 2025 ArcGIS view and Conham
+watercourse filter as `analyze_conham_cso_ecoli.py`, over the whole year in one
+pass, and aggregates spill duration into a daily calendar:
+
+```bash
+python scripts/daily_cso.py fetch    # ArcGIS -> conham_cso_events_2025.csv + conham_cso_daily.csv
+python scripts/daily_cso.py build     # offline: re-aggregate the daily CSV from committed raw events
+```
+
+`fetch` needs `services.arcgis.com` egress; run it where that is allowed and
+commit both `conham_cso_events_2025.csv` (raw per-event dump) and
+`conham_cso_daily.csv` (the daily aggregate). Columns of the daily CSV:
+`date`, `spill_hours_day` (hours from events starting that day),
+`spill_hours_2d` / `spill_hours_7d` (trailing 2- and 7-day cumulative sums,
+ending on that day inclusive) and `event_count_day`. `build_2025_timeseries.py`
+uses this file when present to populate the CSO panels every day, falling back to
+the sample-only feature windows otherwise.
+
 ## Per-outfall E. coli model
 
 `scripts/model_conham_ecoli_by_site.py` builds a model from **individual CSO
