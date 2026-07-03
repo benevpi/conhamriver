@@ -8,48 +8,56 @@ thunderstorms are also *local* -- a cell can dump 20 mm on Keynsham while Conham
 stays dry -- so a single point (as in `weather_conham_ecoli.py`) can miss them
 entirely.
 
-This script pulls **hourly** precipitation and **CAPE** from the Open-Meteo ERA5
-archive for many sites spread across the Bristol Avon catchment (Bristol, Bath,
-the Chew and Frome sub-catchments, and the upper Avon headwaters) and, for each
-site and day, computes:
+This script pulls **hourly** precipitation, **CAPE** and (best-effort)
+**lightning potential** for many sites spread across the Bristol Avon catchment
+(Bristol, Bath, the Chew and Frome sub-catchments, and the upper Avon
+headwaters) and, for each site and day, computes:
 
 - ``rain_total_mm``      -- daily total (sanity check against the daily archive);
 - ``rain_max_mm_per_h``  -- the heaviest single hour = peak intensity;
 - ``peak_hour``          -- the local hour (0-23) that peak fell in;
 - ``cape_max``           -- the day's peak CAPE (instability "fuel", J/kg);
-- ``cape_at_peak_hour``  -- CAPE during the heaviest rain hour.
+- ``cape_at_peak_hour``  -- CAPE during the heaviest rain hour;
+- ``lightning_potential_max`` -- the day's peak modelled lightning index (LPI).
 
 CAPE (Convective Available Potential Energy) is a thunderstorm-likelihood proxy:
 a heavy rain hour landing on a high-CAPE day (say >~500 J/kg) is strong evidence
 the downpour was **convective** -- a storm cell -- rather than gentle frontal
-rain. That is exactly the localised-thunderstorm signal we are chasing, and it is
-free from the same request. (An explicit modelled ``lightning_potential`` index
-exists in Open-Meteo's high-res Historical Forecast API but not in this ERA5
-archive endpoint, so it is intentionally not fetched here.)
+rain. That is exactly the localised-thunderstorm signal we are chasing.
+
+Data sources (two endpoints -- this matters). Precipitation comes from the ERA5
+reanalysis **archive** (``archive-api.open-meteo.com``), which is consistent and
+good for rainfall. But that archive is a surface/land dataset and carries **no**
+CAPE or lightning -- requesting ``hourly=cape`` there returns all-null (silently
+written as 0.0, the original bug). CAPE and ``lightning_potential`` live in the
+**Historical Forecast API** (``historical-forecast-api.open-meteo.com``), which
+replays past high-resolution forecast runs, so they are fetched there and merged
+by timestamp. lightning_potential is strictly best-effort: only some models
+produce it and UK coverage isn't guaranteed, so its column may be blank.
 
 Two outputs:
 
-- ``docs/data/rainfall_intensity_by_site.csv`` -- tidy long form
-  (date, site, lat, lon, rain_total_mm, rain_max_mm_per_h, peak_hour);
+- ``docs/data/rainfall_intensity_by_site.csv`` -- tidy long form (date, site,
+  lat, lon, rain_total_mm, rain_max_mm_per_h, peak_hour, cape_max_j_per_kg,
+  cape_at_peak_hour_j_per_kg, lightning_potential_max);
 - ``docs/data/rainfall_intensity_daily_max.csv`` -- wide: one row per day, one
-  column per site of the peak hourly intensity, plus ``catchment_max`` /
-  ``catchment_max_site`` so you can see, per day, the worst downpour *anywhere*
-  in the catchment and where it hit.
+  column per site of the peak hourly intensity, plus catchment-wide summaries of
+  the worst downpour, the highest CAPE and the highest lightning potential (each
+  with the site it occurred at).
 
-Like the other fetch scripts, the network step is separate because ERA5 needs
-outbound access to ``archive-api.open-meteo.com``:
+Like the other fetch scripts, the network step is separate because it needs
+outbound access to ``archive-api.open-meteo.com`` and
+``historical-forecast-api.open-meteo.com``:
 
     python scripts/rainfall_intensity.py fetch     # -> the two CSVs above
     python scripts/rainfall_intensity.py sites      # just list the sites, no network
 
 ``fetch`` covers the same date range as the E. coli sampling programme by
 default (min sample date minus a buffer .. max sample date); override with
-``--start`` / ``--end``. Caveats: ERA5-Land (precipitation) is a ~9-11 km
-reanalysis grid and ERA5 (CAPE) is coarser at ~25 km -- neither is a rain gauge,
-and both *smooth* the sharpest convective peaks, so treat the intensity as a
-lower bound and both fields as a relative (site-to-site, day-to-day) signal
-rather than absolute readings. At ~25 km, CAPE is also barely site-specific
-across this catchment; read it as a regional "was the airmass unstable?" flag.
+``--start`` / ``--end``. Caveats: these are ~2-11 km model grids, not rain
+gauges, and they *smooth* the sharpest convective peaks, so treat the intensity
+as a lower bound and all fields as a relative (site-to-site, day-to-day) signal
+rather than absolute readings.
 
 Standard library only.
 """
@@ -67,6 +75,10 @@ from datetime import date, timedelta
 from pathlib import Path
 
 ARCHIVE_URL = "https://archive-api.open-meteo.com/v1/archive"
+# CAPE and lightning_potential are NOT in the ERA5 reanalysis archive (that is a
+# surface/land dataset). They live in the Historical Forecast API, which replays
+# past runs of the high-resolution forecast models and reaches back to 2022.
+FORECAST_URL = "https://historical-forecast-api.open-meteo.com/v1/forecast"
 
 SAMPLES_CSV = "docs/data/conham_sampling_2025_2026_e_coli.csv"
 LONG_CSV = "docs/data/rainfall_intensity_by_site.csv"
@@ -121,34 +133,52 @@ def read_sample_dates(path: Path) -> list[date]:
         return sorted(date.fromisoformat(row["sample_date"]) for row in csv.DictReader(handle))
 
 
-def _request_hourly(params: dict) -> dict:
-    url = ARCHIVE_URL + "?" + urllib.parse.urlencode(params)
-    with urllib.request.urlopen(url, timeout=120) as response:
+def _request_hourly(url: str, params: dict) -> dict:
+    full = url + "?" + urllib.parse.urlencode(params)
+    with urllib.request.urlopen(full, timeout=120) as response:
         data = json.load(response)
     if data.get("error"):
         raise RuntimeError(json.dumps(data, indent=2))
     return data.get("hourly", {})
 
 
-def fetch_hourly(lat: float, lon: float, start: date, end: date) -> tuple[list[tuple[str, float, float]], int]:
-    """Return ([(iso_hour, precipitation_mm, cape_j_per_kg), ...], n_cape_present).
+def _optional_hourly_map(url: str, base: dict, variable: str) -> dict[str, float]:
+    """{timestamp: value} for a best-effort variable; {} if the API can't serve it.
 
-    ``cape`` (Convective Available Potential Energy, J/kg) is the atmosphere's
-    instability "fuel": high CAPE means a thunderstorm-favourable atmosphere. A
-    heavy rain hour landing on a high-CAPE day is strong evidence the downpour
-    was convective (a storm cell) rather than frontal drizzle.
+    Used for CAPE and lightning_potential, which some models/regions don't
+    produce. A failure here must not sink the whole fetch, so errors and nulls
+    are swallowed and simply yield an empty map (the caller then warns).
+    """
+    try:
+        hourly = _request_hourly(url, {**base, "hourly": variable})
+    except (urllib.error.URLError, RuntimeError):
+        return {}
+    times = hourly.get("time", [])
+    vals = hourly.get(variable, [None] * len(times))
+    return {t: v for t, v in zip(times, vals) if v is not None}
 
-    Two requests, on purpose. Precipitation is taken from the archive's default
-    high-resolution model (ERA5-Land seamless, ~11 km) because localised
-    convective cells are the whole point. But **ERA5-Land is a land-surface
-    dataset and carries no CAPE** -- an unpinned ``hourly=cape`` request comes
-    back all-null (silently written as 0.0, the bug this fixes). CAPE only exists
-    in the full ERA5 atmospheric reanalysis (~25 km), so it is fetched in a
-    second request pinned to ``models=era5`` and merged back by timestamp.
 
-    ``n_cape_present`` counts how many hours actually returned a (non-null) CAPE
-    value, so the caller can warn loudly if the field is empty again rather than
-    silently writing zeros.
+def fetch_hourly(lat: float, lon: float, start: date, end: date):
+    """Return (rows, n_cape_present, n_lightning_present).
+
+    ``rows`` is [(iso_hour, precipitation_mm, cape_j_per_kg, lightning_potential), ...].
+
+    Precipitation comes from the ERA5 **archive** (reanalysis) -- consistent and
+    good for localised-cell intensity, which is the whole point of the script.
+    But the archive is a surface/land dataset and carries **no** CAPE or
+    lightning (an ``hourly=cape`` request there returns all-null, silently
+    written as 0.0 -- the original bug). Those convective fields live in the
+    Historical Forecast API instead, so they are fetched from ``FORECAST_URL`` and
+    merged back by timestamp:
+
+    - ``cape`` (Convective Available Potential Energy, J/kg): instability "fuel";
+      a heavy rain hour on a high-CAPE day is likely a convective storm cell.
+    - ``lightning_potential`` (LPI, J/kg): a modelled lightning-likelihood index.
+      Only some models produce it and UK coverage is not guaranteed, so it is
+      strictly best-effort -- if the API can't serve it the column is left blank.
+
+    The two ``n_*_present`` counts let the caller warn loudly (rather than write
+    silent zeros) if either convective field comes back empty.
     """
     base = {
         "latitude": lat,
@@ -157,48 +187,52 @@ def fetch_hourly(lat: float, lon: float, start: date, end: date) -> tuple[list[t
         "end_date": end.isoformat(),
         "timezone": "Europe/London",
     }
-    precip_h = _request_hourly({**base, "hourly": "precipitation"})
-    # CAPE from ERA5 (not ERA5-Land, which lacks it). Same range/timezone, so the
-    # hour keys line up 1:1; merge by timestamp to be safe rather than by index.
-    cape_h = _request_hourly({**base, "hourly": "cape", "models": "era5"})
+    precip_h = _request_hourly(ARCHIVE_URL, {**base, "hourly": "precipitation"})
+    cape_by_hour = _optional_hourly_map(FORECAST_URL, base, "cape")
+    lightning_by_hour = _optional_hourly_map(FORECAST_URL, base, "lightning_potential")
 
     times = precip_h.get("time", [])
     precip = precip_h.get("precipitation", [None] * len(times))
-    cape_by_hour = dict(zip(cape_h.get("time", []), cape_h.get("cape", [])))
 
-    rows: list[tuple[str, float, float]] = []
-    n_cape = 0
+    rows = []
+    n_cape = n_light = 0
     for t, p in zip(times, precip):
         c = cape_by_hour.get(t)
+        li = lightning_by_hour.get(t)
         if c is not None:
             n_cape += 1
-        rows.append((t, (p if p is not None else 0.0), (c if c is not None else 0.0)))
-    return rows, n_cape
+        if li is not None:
+            n_light += 1
+        rows.append((t, (p if p is not None else 0.0),
+                     (c if c is not None else 0.0), (li if li is not None else 0.0)))
+    return rows, n_cape, n_light
 
 
-# Per-day tuple: (total_mm, peak_mm_per_h, peak_hour, cape_max, cape_at_peak_hour).
-DayStats = tuple[float, float, int, float, float]
+# Per-day tuple: (total_mm, peak_mm_per_h, peak_hour, cape_max, cape_at_peak_hour, lightning_max).
+DayStats = tuple[float, float, int, float, float, float]
 
 
-def daily_intensity(hourly: list[tuple[str, float, float]]) -> dict[str, DayStats]:
-    """Collapse hourly rain + CAPE to per-day stats.
+def daily_intensity(hourly) -> dict[str, DayStats]:
+    """Collapse hourly rain + CAPE + lightning to per-day stats.
 
     Returns, per day: daily total rain, the heaviest single hour (peak
-    intensity) and the hour it fell in, the day's max CAPE, and the CAPE during
-    that heaviest rain hour (ties instability to the actual downpour).
+    intensity) and the hour it fell in, the day's max CAPE, the CAPE during that
+    heaviest rain hour (ties instability to the actual downpour), and the day's
+    max lightning-potential index.
     """
-    by_day: dict[str, list[tuple[int, float, float]]] = defaultdict(list)
-    for iso_hour, mm, cape in hourly:
+    by_day: dict[str, list[tuple[int, float, float, float]]] = defaultdict(list)
+    for iso_hour, mm, cape, light in hourly:
         day, _, clock = iso_hour.partition("T")
         hour = int(clock[:2]) if clock else 0
-        by_day[day].append((hour, mm, cape))
+        by_day[day].append((hour, mm, cape, light))
     out: dict[str, DayStats] = {}
     for day, hours in by_day.items():
-        total = sum(mm for _, mm, _ in hours)
-        peak_hour, peak_mm, cape_at_peak = max(hours, key=lambda hmc: hmc[1])
-        cape_max = max(c for _, _, c in hours)
+        total = sum(mm for _, mm, _, _ in hours)
+        peak_hour, peak_mm, cape_at_peak, _ = max(hours, key=lambda h: h[1])
+        cape_max = max(c for _, _, c, _ in hours)
+        light_max = max(li for _, _, _, li in hours)
         out[day] = (round(total, 2), round(peak_mm, 2), peak_hour,
-                    round(cape_max, 1), round(cape_at_peak, 1))
+                    round(cape_max, 1), round(cape_at_peak, 1), round(light_max, 2))
     return out
 
 
@@ -213,10 +247,10 @@ def run_fetch(args) -> int:
 
     # site -> {day -> DayStats}
     per_site: dict[str, dict[str, DayStats]] = {}
-    cape_present_total = 0
+    cape_present_total = light_present_total = 0
     for i, (name, lat, lon) in enumerate(SITES, 1):
         try:
-            hourly, n_cape = fetch_hourly(lat, lon, start, end)
+            hourly, n_cape, n_light = fetch_hourly(lat, lon, start, end)
         except urllib.error.URLError as exc:
             raise SystemExit(
                 f"Could not reach Open-Meteo ({ARCHIVE_URL}): {exc}.\n"
@@ -224,17 +258,22 @@ def run_fetch(args) -> int:
                 f"  {LONG_CSV}\n  {WIDE_CSV}"
             )
         cape_present_total += n_cape
+        light_present_total += n_light
         per_site[name] = daily_intensity(hourly)
-        cape = "no CAPE!" if n_cape == 0 else f"CAPE ok ({n_cape}h)"
-        print(f"  [{i:>2}/{len(SITES)}] {name}: {len(per_site[name])} days, {cape}")
+        cape = "no CAPE!" if n_cape == 0 else f"CAPE {n_cape}h"
+        light = "no LPI" if n_light == 0 else f"LPI {n_light}h"
+        print(f"  [{i:>2}/{len(SITES)}] {name}: {len(per_site[name])} days, {cape}, {light}")
         if i < len(SITES):
             time.sleep(0.5)  # be polite to the free API
 
     all_days = sorted({d for days in per_site.values() for d in days})
 
     if cape_present_total == 0:
-        print("\n  WARNING: CAPE came back empty for every site. The ERA5 CAPE request\n"
-              "  (models=era5) returned no values -- do NOT trust the cape_* columns.\n")
+        print("\n  WARNING: CAPE came back empty for every site -- the Historical Forecast\n"
+              f"  API ({FORECAST_URL}) served no `cape`. Do NOT trust the cape_* columns.\n")
+    if light_present_total == 0:
+        print("  NOTE: lightning_potential (LPI) was empty for every site -- the model\n"
+              "  covering this area doesn't produce it. The lightning columns are blank.\n")
 
     # Long / tidy form.
     long_path = Path(args.long)
@@ -243,13 +282,15 @@ def run_fetch(args) -> int:
     with long_path.open("w", newline="", encoding="utf-8") as handle:
         writer = csv.writer(handle)
         writer.writerow(["date", "site", "lat", "lon", "rain_total_mm", "rain_max_mm_per_h",
-                         "peak_hour", "cape_max_j_per_kg", "cape_at_peak_hour_j_per_kg"])
+                         "peak_hour", "cape_max_j_per_kg", "cape_at_peak_hour_j_per_kg",
+                         "lightning_potential_max"])
         for name, _, _ in SITES:
             lat, lon = coords[name]
             for day in all_days:
                 if day in per_site[name]:
-                    total, peak_mm, peak_hour, cape_max, cape_at_peak = per_site[name][day]
-                    writer.writerow([day, name, lat, lon, total, peak_mm, peak_hour, cape_max, cape_at_peak])
+                    total, peak_mm, peak_hour, cape_max, cape_at_peak, light_max = per_site[name][day]
+                    writer.writerow([day, name, lat, lon, total, peak_mm, peak_hour,
+                                     cape_max, cape_at_peak, light_max])
 
     # Wide form: peak hourly intensity per site per day + catchment-wide worst,
     # plus a catchment-wide CAPE summary so a day's convective potential sits
@@ -260,25 +301,31 @@ def run_fetch(args) -> int:
         writer = csv.writer(handle)
         writer.writerow(["date"] + site_names + [
             "catchment_max_mm_per_h", "catchment_max_site",
-            "catchment_max_cape_j_per_kg", "catchment_max_cape_site"])
+            "catchment_max_cape_j_per_kg", "catchment_max_cape_site",
+            "catchment_max_lightning_potential", "catchment_max_lightning_site"])
         for day in all_days:
             row = [day]
             best_mm, best_site = -1.0, ""
             best_cape, best_cape_site = -1.0, ""
+            best_light, best_light_site = -1.0, ""
             for name in site_names:
                 if day in per_site[name]:
                     peak_mm = per_site[name][day][1]
                     cape_max = per_site[name][day][3]
+                    light_max = per_site[name][day][5]
                     row.append(peak_mm)
                     if peak_mm > best_mm:
                         best_mm, best_site = peak_mm, name
                     if cape_max > best_cape:
                         best_cape, best_cape_site = cape_max, name
+                    if light_max > best_light:
+                        best_light, best_light_site = light_max, name
                 else:
                     row.append("")
             row.extend([
                 round(best_mm, 2) if best_mm >= 0 else "", best_site,
-                round(best_cape, 1) if best_cape >= 0 else "", best_cape_site])
+                round(best_cape, 1) if best_cape >= 0 else "", best_cape_site,
+                round(best_light, 2) if best_light >= 0 else "", best_light_site])
             writer.writerow(row)
 
     print(f"Wrote {long_path} ({len(all_days) * len(SITES)} site-days)")
@@ -290,7 +337,7 @@ def run_fetch(args) -> int:
     for day in all_days:
         for name in site_names:
             if day in per_site[name]:
-                total, peak_mm, peak_hour, cape_max, cape_at_peak = per_site[name][day]
+                total, peak_mm, peak_hour, cape_max, cape_at_peak, light_max = per_site[name][day]
                 peaks.append((peak_mm, day, name, peak_hour, cape_at_peak))
     peaks.sort(reverse=True)
     print("Ten most intense single hours in the catchment (with CAPE that hour):")
