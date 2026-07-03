@@ -44,10 +44,12 @@ outbound access to ``archive-api.open-meteo.com``:
 
 ``fetch`` covers the same date range as the E. coli sampling programme by
 default (min sample date minus a buffer .. max sample date); override with
-``--start`` / ``--end``. Caveat: ERA5 is a ~9-11 km reanalysis grid, not a rain
-gauge -- it will *smooth* the sharpest convective peaks, so treat the intensity
-as a lower bound and a relative (site-to-site, day-to-day) signal rather than an
-absolute gauge reading.
+``--start`` / ``--end``. Caveats: ERA5-Land (precipitation) is a ~9-11 km
+reanalysis grid and ERA5 (CAPE) is coarser at ~25 km -- neither is a rain gauge,
+and both *smooth* the sharpest convective peaks, so treat the intensity as a
+lower bound and both fields as a relative (site-to-site, day-to-day) signal
+rather than absolute readings. At ~25 km, CAPE is also barely site-specific
+across this catchment; read it as a regional "was the airmass unstable?" flag.
 
 Standard library only.
 """
@@ -119,35 +121,59 @@ def read_sample_dates(path: Path) -> list[date]:
         return sorted(date.fromisoformat(row["sample_date"]) for row in csv.DictReader(handle))
 
 
-def fetch_hourly(lat: float, lon: float, start: date, end: date) -> list[tuple[str, float, float]]:
-    """Return [(iso_hour, precipitation_mm, cape_j_per_kg), ...] over [start, end].
-
-    ``cape`` (Convective Available Potential Energy, J/kg) is the atmosphere's
-    instability "fuel": high CAPE means a thunderstorm-favourable atmosphere. A
-    heavy rain hour landing on a high-CAPE day is strong evidence the downpour
-    was convective (a storm cell) rather than frontal drizzle.
-    """
-    params = {
-        "latitude": lat,
-        "longitude": lon,
-        "start_date": start.isoformat(),
-        "end_date": end.isoformat(),
-        "hourly": "precipitation,cape",
-        "timezone": "Europe/London",
-    }
+def _request_hourly(params: dict) -> dict:
     url = ARCHIVE_URL + "?" + urllib.parse.urlencode(params)
     with urllib.request.urlopen(url, timeout=120) as response:
         data = json.load(response)
     if data.get("error"):
         raise RuntimeError(json.dumps(data, indent=2))
-    hourly = data.get("hourly", {})
-    times = hourly.get("time", [])
-    precip = hourly.get("precipitation", [None] * len(times))
-    cape = hourly.get("cape", [None] * len(times))
-    return [
-        (t, (p if p is not None else 0.0), (c if c is not None else 0.0))
-        for t, p, c in zip(times, precip, cape)
-    ]
+    return data.get("hourly", {})
+
+
+def fetch_hourly(lat: float, lon: float, start: date, end: date) -> tuple[list[tuple[str, float, float]], int]:
+    """Return ([(iso_hour, precipitation_mm, cape_j_per_kg), ...], n_cape_present).
+
+    ``cape`` (Convective Available Potential Energy, J/kg) is the atmosphere's
+    instability "fuel": high CAPE means a thunderstorm-favourable atmosphere. A
+    heavy rain hour landing on a high-CAPE day is strong evidence the downpour
+    was convective (a storm cell) rather than frontal drizzle.
+
+    Two requests, on purpose. Precipitation is taken from the archive's default
+    high-resolution model (ERA5-Land seamless, ~11 km) because localised
+    convective cells are the whole point. But **ERA5-Land is a land-surface
+    dataset and carries no CAPE** -- an unpinned ``hourly=cape`` request comes
+    back all-null (silently written as 0.0, the bug this fixes). CAPE only exists
+    in the full ERA5 atmospheric reanalysis (~25 km), so it is fetched in a
+    second request pinned to ``models=era5`` and merged back by timestamp.
+
+    ``n_cape_present`` counts how many hours actually returned a (non-null) CAPE
+    value, so the caller can warn loudly if the field is empty again rather than
+    silently writing zeros.
+    """
+    base = {
+        "latitude": lat,
+        "longitude": lon,
+        "start_date": start.isoformat(),
+        "end_date": end.isoformat(),
+        "timezone": "Europe/London",
+    }
+    precip_h = _request_hourly({**base, "hourly": "precipitation"})
+    # CAPE from ERA5 (not ERA5-Land, which lacks it). Same range/timezone, so the
+    # hour keys line up 1:1; merge by timestamp to be safe rather than by index.
+    cape_h = _request_hourly({**base, "hourly": "cape", "models": "era5"})
+
+    times = precip_h.get("time", [])
+    precip = precip_h.get("precipitation", [None] * len(times))
+    cape_by_hour = dict(zip(cape_h.get("time", []), cape_h.get("cape", [])))
+
+    rows: list[tuple[str, float, float]] = []
+    n_cape = 0
+    for t, p in zip(times, precip):
+        c = cape_by_hour.get(t)
+        if c is not None:
+            n_cape += 1
+        rows.append((t, (p if p is not None else 0.0), (c if c is not None else 0.0)))
+    return rows, n_cape
 
 
 # Per-day tuple: (total_mm, peak_mm_per_h, peak_hour, cape_max, cape_at_peak_hour).
@@ -187,21 +213,28 @@ def run_fetch(args) -> int:
 
     # site -> {day -> DayStats}
     per_site: dict[str, dict[str, DayStats]] = {}
+    cape_present_total = 0
     for i, (name, lat, lon) in enumerate(SITES, 1):
         try:
-            hourly = fetch_hourly(lat, lon, start, end)
+            hourly, n_cape = fetch_hourly(lat, lon, start, end)
         except urllib.error.URLError as exc:
             raise SystemExit(
                 f"Could not reach Open-Meteo ({ARCHIVE_URL}): {exc}.\n"
                 "Run `fetch` where archive-api.open-meteo.com egress is allowed, then commit\n"
                 f"  {LONG_CSV}\n  {WIDE_CSV}"
             )
+        cape_present_total += n_cape
         per_site[name] = daily_intensity(hourly)
-        print(f"  [{i:>2}/{len(SITES)}] {name}: {len(per_site[name])} days")
+        cape = "no CAPE!" if n_cape == 0 else f"CAPE ok ({n_cape}h)"
+        print(f"  [{i:>2}/{len(SITES)}] {name}: {len(per_site[name])} days, {cape}")
         if i < len(SITES):
             time.sleep(0.5)  # be polite to the free API
 
     all_days = sorted({d for days in per_site.values() for d in days})
+
+    if cape_present_total == 0:
+        print("\n  WARNING: CAPE came back empty for every site. The ERA5 CAPE request\n"
+              "  (models=era5) returned no values -- do NOT trust the cape_* columns.\n")
 
     # Long / tidy form.
     long_path = Path(args.long)
