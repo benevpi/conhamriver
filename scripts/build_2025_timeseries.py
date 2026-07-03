@@ -26,13 +26,17 @@ def main() -> int:
     with open(WEATHER, newline="", encoding="utf-8") as h:
         for r in csv.DictReader(h):
             weather[r["date"]] = r
-    # E. coli + 7-day CSO spill hours per sample date.
+    # E. coli plus CSO spill hours at several lookback windows per sample date:
+    # same day (1), 2 days and 7 days before the sample.
     samples = {}
     with open(FEATURES, newline="", encoding="utf-8") as h:
         for r in csv.DictReader(h):
-            if int(r["lookback_days"]) != 7:
+            lb = int(r["lookback_days"])
+            if lb not in (1, 2, 7):
                 continue
-            samples[r["sample_date"]] = (r["e_coli_cfu_per_100ml"], r["spill_hours_total"])
+            s = samples.setdefault(
+                r["sample_date"], {"ecoli": r["e_coli_cfu_per_100ml"]})
+            s[f"cso{lb}"] = r["spill_hours_total"]
 
     days = sorted(d for d in weather if d.startswith("2025"))
     start, end = date.fromisoformat(days[0]), date.fromisoformat(days[-1])
@@ -41,11 +45,14 @@ def main() -> int:
     while d <= end:
         key = d.isoformat()
         w = weather.get(key, {})
-        ec, cso = samples.get(key, ("", ""))
+        s = samples.get(key, {})
+        hrs = lambda v: (f"{float(v):.1f}" if v not in (None, "") else "")
         rows.append({
             "date": key,
-            "ecoli_cfu_per_100ml": ec,
-            "cso_spill_hours_7d": (f"{float(cso):.1f}" if cso else ""),
+            "ecoli_cfu_per_100ml": s.get("ecoli", ""),
+            "cso_spill_hours_sameday": hrs(s.get("cso1")),
+            "cso_spill_hours_2d": hrs(s.get("cso2")),
+            "cso_spill_hours_7d": hrs(s.get("cso7")),
             "rain_mm": w.get("precipitation_mm", ""),
             "temp_mean_c": w.get("temp_mean_c", ""),
             # Populated once wind is added to the weather fetch (blank until then).
