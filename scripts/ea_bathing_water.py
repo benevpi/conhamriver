@@ -43,9 +43,9 @@ import urllib.parse
 import urllib.request
 from pathlib import Path
 
-API = "https://environment.data.gov.uk/data/bathing-water-quality/in-season.json"
+API = "https://environment.data.gov.uk/data/bathing-water-quality/eaew/in-season.json"
 ID_BASE = "https://environment.data.gov.uk/id/bathing-water/"
-DEFAULT_EUBWID = "ukl1602-36700"  # River Wharfe at Ilkley -- VERIFY on Swimfo
+DEFAULT_EUBWID = "uke4200-08904"  # River Wharfe at Ilkley (Wilderness car park)
 SOURCE = "https://environment.data.gov.uk/ (EA Bathing Water Quality)"
 
 # Candidate keys for each determinand, in case the API labels them differently.
