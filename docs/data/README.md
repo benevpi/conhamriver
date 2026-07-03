@@ -98,9 +98,11 @@ across the Bristol Avon catchment (Bristol, Bath, the Chew and Frome
 sub-catchments and the upper-Avon headwaters). The point is to catch localised
 convective **thunderstorms** — a cell can dump heavy rain on one tributary while
 the rest of the catchment stays dry, which a single Conham point and daily totals
-both miss. It pulls **hourly** precipitation and **CAPE** (Convective Available
-Potential Energy, a thunderstorm-likelihood proxy) from the Open-Meteo ERA5
-archive — a heavy rain hour on a high-CAPE day is likely a convective storm cell:
+both miss. It pulls **hourly** precipitation (from the high-resolution ERA5-Land
+model, ~11 km) and **CAPE** (Convective Available Potential Energy, a
+thunderstorm-likelihood proxy, from ERA5, ~25 km — ERA5-Land carries no CAPE, so
+it is fetched as a second `models=era5` request) from the Open-Meteo archive — a
+heavy rain hour on a high-CAPE day is likely a convective storm cell:
 
 ```bash
 python scripts/rainfall_intensity.py sites     # list the catchment sites (no network)
