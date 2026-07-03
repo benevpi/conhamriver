@@ -20,6 +20,7 @@ from pathlib import Path
 
 WEATHER = "docs/data/conham_weather_daily.csv"
 FEATURES = "docs/data/conham_cso_ecoli_features.csv"
+DAILY_CSO = "docs/data/conham_cso_daily.csv"
 INTENSITY = "docs/data/rainfall_intensity_daily_max.csv"
 OUTPUT = "docs/data/conham_2025_timeseries.csv"
 
@@ -29,17 +30,33 @@ def main() -> int:
     with open(WEATHER, newline="", encoding="utf-8") as h:
         for r in csv.DictReader(h):
             weather[r["date"]] = r
-    # E. coli plus CSO spill hours at several lookback windows per sample date:
-    # same day (1), 2 days and 7 days before the sample.
+    # E. coli per sample date (always from the feature table).
     samples = {}
     with open(FEATURES, newline="", encoding="utf-8") as h:
         for r in csv.DictReader(h):
-            lb = int(r["lookback_days"])
-            if lb not in (1, 2, 7):
-                continue
-            s = samples.setdefault(
-                r["sample_date"], {"ecoli": r["e_coli_cfu_per_100ml"]})
-            s[f"cso{lb}"] = r["spill_hours_total"]
+            if int(r["lookback_days"]) == 7:
+                samples[r["sample_date"]] = {"ecoli": r["e_coli_cfu_per_100ml"]}
+
+    # CSO spill hours. Prefer the continuous DAILY series (conham_cso_daily.csv,
+    # from daily_cso.py) so the CSO panels are populated every day; fall back to
+    # the sample-only feature windows if the daily fetch hasn't been run.
+    daily_cso = {}
+    daily_path = Path(DAILY_CSO)
+    if daily_path.exists():
+        with daily_path.open(newline="", encoding="utf-8") as h:
+            for r in csv.DictReader(h):
+                daily_cso[r["date"]] = (
+                    r["spill_hours_day"], r["spill_hours_2d"], r["spill_hours_7d"])
+    else:
+        # Sample-only fallback: same-day (lookback 1), 2-day and 7-day windows.
+        with open(FEATURES, newline="", encoding="utf-8") as h:
+            per_sample = {}
+            for r in csv.DictReader(h):
+                lb = int(r["lookback_days"])
+                if lb in (1, 2, 7):
+                    per_sample.setdefault(r["sample_date"], {})[lb] = r["spill_hours_total"]
+        for sd, bylb in per_sample.items():
+            daily_cso[sd] = (bylb.get(1, ""), bylb.get(2, ""), bylb.get(7, ""))
 
     # Catchment-wide daily peak CAPE and peak rainfall intensity (optional; blank
     # if the intensity fetch hasn't been run/committed).
@@ -59,13 +76,14 @@ def main() -> int:
         key = d.isoformat()
         w = weather.get(key, {})
         s = samples.get(key, {})
+        cso = daily_cso.get(key, ("", "", ""))
         hrs = lambda v: (f"{float(v):.1f}" if v not in (None, "") else "")
         rows.append({
             "date": key,
             "ecoli_cfu_per_100ml": s.get("ecoli", ""),
-            "cso_spill_hours_sameday": hrs(s.get("cso1")),
-            "cso_spill_hours_2d": hrs(s.get("cso2")),
-            "cso_spill_hours_7d": hrs(s.get("cso7")),
+            "cso_spill_hours_sameday": hrs(cso[0]),
+            "cso_spill_hours_2d": hrs(cso[1]),
+            "cso_spill_hours_7d": hrs(cso[2]),
             "rain_mm": w.get("precipitation_mm", ""),
             "peak_rain_mm_per_h": peak_rain.get(key, ""),
             "temp_mean_c": w.get("temp_mean_c", ""),
@@ -83,7 +101,9 @@ def main() -> int:
     n_samples = sum(1 for r in rows if r["ecoli_cfu_per_100ml"])
     has_wind = any(r["wind_max_kmh"] for r in rows)
     has_cape = any(r["cape_max_j_per_kg"] for r in rows)
+    cso_days = sum(1 for r in rows if r["cso_spill_hours_7d"] != "")
     print(f"Wrote {out} ({len(rows)} days, {n_samples} sample dates)")
+    print(f"  CSO days populated: {cso_days} ({'daily series' if daily_path.exists() else 'sample-only fallback'})")
     print(f"  wind data present: {has_wind}")
     print(f"  CAPE data present: {has_cape}")
     return 0
