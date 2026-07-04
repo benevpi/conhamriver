@@ -47,12 +47,18 @@ CONHAM_RIVERS = {
 # upstream Avon corridor and its tributaries.
 BBOX = {"min_lat": 51.30, "max_lat": 51.55, "min_lon": -2.62, "max_lon": -2.10}
 MAX_DISTANCE_MILES = 15.0      # only report outfalls within this of Conham
+NEARBY_PANEL_MILES = 5.0       # "nearby" panel on the 2025 graph: upstream + this close
 LOOKBACK_DAYS = 7
 
 NEARBY_EVENTS_CSV = "docs/data/conham_nearby_cso_events.csv"
 SAMPLES_CSV = "docs/data/conham_sampling_2025_2026_e_coli.csv"
 REPORT_MD = "docs/data/conham_nearby_cso_investigation.md"
+NEARBY_DAILY_CSV = "docs/data/conham_cso_nearby_daily.csv"
 HIGH_THRESHOLD = 450.0
+# Same fetch window as daily_cso.py, so the nearby daily series lines up with
+# the main upstream-CSO series over the whole plotted year.
+DAILY_START = date(2025, 1, 1)
+DAILY_END = date(2026, 1, 1)  # exclusive upper bound
 
 
 def haversine(lat1, lon1, lat2, lon2) -> float:
@@ -257,6 +263,50 @@ def run_report(args) -> int:
     return 0
 
 
+# --------------------------------------------------------------------------- #
+# daily (nearby-CSO panel on the 2025 graph: upstream + within NEARBY_PANEL_MILES)
+# --------------------------------------------------------------------------- #
+def aggregate_nearby_daily(events: list[dict]) -> list[dict]:
+    """Daily spill hours (same-day + trailing 2-day cumulative) for events that
+    are upstream of Conham and within NEARBY_PANEL_MILES -- a tighter, distance-
+    filtered counterpart to daily_cso.py's all-upstream-rivers series."""
+    by_day_hours: dict[date, float] = defaultdict(float)
+    for e in events:
+        if not e["upstream"] or e["distance_miles"] > NEARBY_PANEL_MILES:
+            continue
+        d = e["_start"].date()
+        by_day_hours[d] += float(e["duration_hours"]) if e["duration_hours"] not in ("", "?") else 0.0
+
+    rows = []
+    d = DAILY_START
+    while d < DAILY_END:
+        trailing2 = round(by_day_hours.get(d, 0.0) + by_day_hours.get(d - timedelta(days=1), 0.0), 2)
+        rows.append({
+            "date": d.isoformat(),
+            "spill_hours_day": round(by_day_hours.get(d, 0.0), 2),
+            "spill_hours_2d": trailing2,
+        })
+        d += timedelta(days=1)
+    return rows
+
+
+def run_daily(args) -> int:
+    events_path = Path(args.events)
+    if not events_path.exists():
+        raise SystemExit(f"{events_path} not found. Run `python {Path(__file__).name} fetch` first.")
+    events = load_events(events_path)
+    rows = aggregate_nearby_daily(events)
+    out = Path(args.daily)
+    out.parent.mkdir(parents=True, exist_ok=True)
+    with out.open("w", newline="", encoding="utf-8") as h:
+        writer = csv.DictWriter(h, fieldnames=list(rows[0].keys()))
+        writer.writeheader()
+        writer.writerows(rows)
+    spill_days = sum(1 for r in rows if r["spill_hours_day"] > 0)
+    print(f"Wrote {out} ({len(rows)} days, {spill_days} with nearby (<{NEARBY_PANEL_MILES:g} mi) upstream spilling)")
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     sub = parser.add_subparsers(dest="command")
@@ -271,6 +321,10 @@ def build_parser() -> argparse.ArgumentParser:
     r.add_argument("--events", default=NEARBY_EVENTS_CSV)
     r.add_argument("--report", default=REPORT_MD)
     r.set_defaults(func=run_report)
+    dcmd = sub.add_parser("daily", help="Aggregate the nearby (<5 mi, upstream) events into a daily CSV (offline)")
+    dcmd.add_argument("--events", default=NEARBY_EVENTS_CSV)
+    dcmd.add_argument("--daily", default=NEARBY_DAILY_CSV)
+    dcmd.set_defaults(func=run_daily)
     return parser
 
 
