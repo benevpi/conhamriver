@@ -1,11 +1,17 @@
 import requests
 from datetime import datetime, timedelta
 from math import radians, sin, cos, sqrt, atan2
+from collections import defaultdict
 import os
 import json
 from string import Template
 
 index_data = []
+
+# Number of days of history shown in the per-site "recent" chart (styled after
+# the 2025 review page). A 7-day pre-roll is fetched on top of this so the
+# trailing 2-/7-day cumulative CSO sums are complete from the first plotted day.
+CHART_DAYS = 45
 
 def haversine(lat1, lon1, lat2, lon2):
     R = 3958.8  # Earth radius in miles
@@ -52,6 +58,41 @@ def get_forecast_rain(lat, lon):
     return warnings
 
 
+# Fetch recent daily rainfall and mean temperature for the swim site, used by the
+# per-site history chart. Uses the open-meteo forecast endpoint with `past_days`
+# so it returns a continuous daily series ending today (no separate archive key).
+def get_daily_weather(lat, lon, past_days=CHART_DAYS):
+    """Return {YYYY-MM-DD: (rain_mm, temp_mean_c)} for the last ``past_days``
+    days up to and including today. Missing values are None."""
+    url = "https://api.open-meteo.com/v1/forecast"
+    params = {
+        "latitude": lat,
+        "longitude": lon,
+        "daily": "precipitation_sum,temperature_2m_mean",
+        "past_days": past_days,
+        "forecast_days": 1,  # include today
+        "timezone": "UTC",
+    }
+    try:
+        resp = requests.get(url, params=params, timeout=10)
+        resp.raise_for_status()
+        data = resp.json()
+    except Exception as e:
+        print(f"Failed to fetch daily weather: {e}")
+        return {}
+
+    daily = data.get("daily", {})
+    times = daily.get("time", [])
+    precip = daily.get("precipitation_sum", [])
+    temp = daily.get("temperature_2m_mean", [])
+    out = {}
+    for i, day in enumerate(times):
+        r = precip[i] if i < len(precip) else None
+        t = temp[i] if i < len(temp) else None
+        out[day] = (r, t)
+    return out
+
+
 # Upstream filter functions for each site
 def is_upstream_conham(lat, lon):
     # Upstream if longitude is greater (i.e., east of the swim site)
@@ -80,9 +121,11 @@ def generate_report(river_name, river_label, rivers_to_query, ref_lat, ref_lon, 
     now = datetime.utcnow()
     two_days_ago_dt = now - timedelta(days=2)
     two_days_ago_ms = two_days_ago_dt.timestamp() * 1000
-    # Query a 7-day window so the feed comfortably covers the last two days that
-    # drive the risk level and the distance-band table.
-    seven_days_ago_str = (now - timedelta(days=7)).strftime("%Y-%m-%d %H:%M:%S")
+    # Query a window wide enough to cover both the last two days that drive the
+    # risk level / distance-band table AND the CHART_DAYS history chart, plus a
+    # 7-day pre-roll so the chart's trailing 7-day CSO sums are complete from its
+    # first plotted day.
+    fetch_from_str = (now - timedelta(days=CHART_DAYS + 7)).strftime("%Y-%m-%d %H:%M:%S")
 
     # Build where clause for the selected rivers. A site may supply a custom
     # watercourse_clause (e.g. Conham matches every River Avon name variant so the
@@ -90,7 +133,7 @@ def generate_report(river_name, river_label, rivers_to_query, ref_lat, ref_lon, 
     conditions = watercourse_clause or " OR ".join(
         [f"ReceivingWaterCourse = '{river}'" for river in rivers_to_query]
     )
-    where_clause = f"({conditions}) AND LatestEventStart >= DATE '{seven_days_ago_str}'"
+    where_clause = f"({conditions}) AND LatestEventStart >= DATE '{fetch_from_str}'"
 
     url = "https://services.arcgis.com/3SZ6e0uCvPROr4mS/ArcGIS/rest/services/Wessex_Water_Storm_Overflow_Activity/FeatureServer/0/query"
 
@@ -116,6 +159,10 @@ def generate_report(river_name, river_label, rivers_to_query, ref_lat, ref_lon, 
     ]
     band_durations = [0] * len(band_edges)
     last_cso_end = None
+    # Upstream spill hours attributed to each calendar day (by event start day),
+    # feeding the per-site history chart's same-day / trailing-2d / trailing-7d
+    # panels. Mirrors scripts/daily_cso.py's aggregation.
+    by_day_hours = defaultdict(float)
 
     if data.get("features"):
         for feat in data["features"]:
@@ -127,6 +174,10 @@ def generate_report(river_name, river_label, rivers_to_query, ref_lat, ref_lon, 
             if start and end and lat is not None and lon is not None and upstream_func(lat, lon):
                 duration_seconds = (end - start) / 1000
                 dist = haversine(ref_lat, ref_lon, lat, lon)
+                # Attribute the full event duration to its start day (all upstream
+                # events in the fetched window, not just the last two days).
+                event_day = datetime.utcfromtimestamp(start / 1000).date()
+                by_day_hours[event_day] += duration_seconds / 3600
                 # The distance-band table / risk use only the last two days.
                 if start >= two_days_ago_ms:
                     for i, edge in enumerate(band_edges):
@@ -166,6 +217,30 @@ def generate_report(river_name, river_label, rivers_to_query, ref_lat, ref_lon, 
             f"<div class='risk-note'>If there is no further rain, the risk will be low at {safe_time} UTC</div>"
         )
 
+    # Build the recent-history chart series (CSO same-day / trailing-2d /
+    # trailing-7d spill hours, daily rainfall and mean temperature) in the style
+    # of the 2025 review page. One row per calendar day over the last CHART_DAYS.
+    weather = get_daily_weather(ref_lat, ref_lon, CHART_DAYS)
+
+    def trailing(day, n):
+        return round(sum(by_day_hours.get(day - timedelta(days=k), 0.0) for k in range(n)), 2)
+
+    chart_rows = []
+    day = (now - timedelta(days=CHART_DAYS)).date()
+    today = now.date()
+    while day <= today:
+        rain, temp = weather.get(day.isoformat(), (None, None))
+        chart_rows.append({
+            "d": day.isoformat(),
+            "cs": round(by_day_hours.get(day, 0.0), 2),
+            "c2": trailing(day, 2),
+            "c": trailing(day, 7),
+            "r": round(rain, 1) if rain is not None else None,
+            "t": round(temp, 1) if temp is not None else None,
+        })
+        day += timedelta(days=1)
+    chart_data = json.dumps(chart_rows)
+
     template_path = os.path.join("templates", "report_template.html")
     with open(template_path, "r", encoding="utf-8") as tpl_file:
         tpl = Template(tpl_file.read())
@@ -179,6 +254,7 @@ def generate_report(river_name, river_label, rivers_to_query, ref_lat, ref_lon, 
         table_rows=table_rows,
         weather_message=weather_message,
         risk_note_block=risk_note_block,
+        chart_data=chart_data,
     )
 
     os.makedirs("docs", exist_ok=True)
