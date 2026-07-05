@@ -24,6 +24,7 @@ WEATHER = "docs/data/conham_weather_daily.csv"
 FEATURES = "docs/data/conham_cso_ecoli_features.csv"
 SAMPLING = "docs/data/conham_sampling_2025_2026.csv"
 DAILY_CSO = "docs/data/conham_cso_daily.csv"
+NEARBY_DAILY_CSO = "docs/data/conham_cso_nearby_daily.csv"
 INTENSITY = "docs/data/rainfall_intensity_daily_max.csv"
 OUTPUT = "docs/data/conham_2025_timeseries.csv"
 
@@ -104,6 +105,16 @@ def main() -> int:
         for sd, bylb in per_sample.items():
             daily_cso[sd] = (bylb.get(1, ""), bylb.get(2, ""), bylb.get(7, ""))
 
+    # Nearby (<5 mi, upstream) CSO spill hours -- a tighter, distance-filtered
+    # counterpart to the all-upstream-rivers series above, from
+    # investigate_nearby_csos.py's `daily` step. Optional; blank if not run.
+    nearby_cso = {}
+    nearby_path = Path(NEARBY_DAILY_CSO)
+    if nearby_path.exists():
+        with nearby_path.open(newline="", encoding="utf-8") as h:
+            for r in csv.DictReader(h):
+                nearby_cso[r["date"]] = (r["spill_hours_day"], r["spill_hours_2d"])
+
     # Catchment-wide daily peak CAPE and peak rainfall intensity (optional; blank
     # if the intensity fetch hasn't been run/committed).
     cape, peak_rain = {}, {}
@@ -123,6 +134,7 @@ def main() -> int:
         w = weather.get(key, {})
         s = samples.get(key, {})
         cso = daily_cso.get(key, ("", "", ""))
+        nearby = nearby_cso.get(key, ("", ""))
         hrs = lambda v: (f"{float(v):.1f}" if v not in (None, "") else "")
         rows.append({
             "date": key,
@@ -132,6 +144,8 @@ def main() -> int:
             "cso_spill_hours_sameday": hrs(cso[0]),
             "cso_spill_hours_2d": hrs(cso[1]),
             "cso_spill_hours_7d": hrs(cso[2]),
+            "cso_nearby_spill_hours_sameday": hrs(nearby[0]),
+            "cso_nearby_spill_hours_2d": hrs(nearby[1]),
             "rain_mm": w.get("precipitation_mm", ""),
             "peak_rain_mm_per_h": peak_rain.get(key, ""),
             "temp_mean_c": w.get("temp_mean_c", ""),
