@@ -82,31 +82,6 @@ caption {
     vertical-align: middle;
 }
 
-/* Predicted bathing-water quality categories */
-.quality-excellent { color: #1a8a3b; font-weight: bold; }
-.quality-good      { color: #0a7db8; font-weight: bold; }
-.quality-sufficient { color: #c77700; font-weight: bold; }
-.quality-poor      { color: #c0392b; font-weight: bold; }
-
-.predicted-quality {
-    margin: 0.4em 0 0.2em 0;
-    font-size: 1.4em;
-}
-.predicted-quality .about-predictions {
-    font-size: 0.6em;
-    font-weight: normal;
-    vertical-align: middle;
-}
-.prediction-basis {
-    font-size: 0.95em;
-    color: var(--text-secondary);
-    margin-bottom: 0.8em;
-}
-
-.forecast-table {
-    margin-top: 1em;
-}
-
 .disclaimer {
     font-size: 0.95em;
     color: var(--text-secondary);
