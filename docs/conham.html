@@ -15,7 +15,7 @@
 </div>
 
 
-<div class="generated-time">Report generated: 05/07/2026 at 09:21. If if has rained since then, the data may be inaccurate</div>
+<div class="generated-time">Report generated: 05/07/2026 at 10:29. If if has rained since then, the data may be inaccurate</div>
 
 
 
@@ -33,6 +33,119 @@
 
 </table>
 <div class="rain-warning"></div>
+
+<style>
+/* Palette matches the always-light "theme-ocean" report page (the report pages
+   have no dark mode of their own, so the chart stays light too). */
+#chart-wrap{--surface:#f0fbff;--ink:#023859;--ink2:#02556e;--grid:#bfe0f2;--cso:#4a3aa7;--rain:#025e8f;--temp:#eb6834;max-width:960px;margin:2em auto 0;font-family:Arial,sans-serif;color:var(--ink);text-align:left}
+#chart-wrap h2{font-size:1.2em;text-align:center;margin:0 0 .2em;color:var(--ink)}
+#chart-wrap .csub{color:var(--ink2);font-size:.85em;text-align:center;margin:.2em auto 1.2em;line-height:1.45;max-width:820px}
+#chart-wrap .csub a{color:var(--rain)}
+#chart-wrap svg{display:block;width:100%;overflow:visible}
+#chart-wrap .cpanel{position:relative;margin-bottom:2px}
+.cgrid{stroke:var(--grid);stroke-width:1}
+.ctick{fill:var(--ink2);font-size:.62rem}
+.cplabel{font-size:.75rem;font-weight:600;fill:var(--ink)}
+.cpunit{font-size:.68rem;fill:var(--ink2)}
+.ccross{stroke:var(--ink2);stroke-width:1;stroke-dasharray:3 3;opacity:.6}
+#ctip{position:fixed;pointer-events:none;background:var(--surface);border:1px solid var(--grid);border-radius:8px;padding:.5em .6em;font-size:.75rem;box-shadow:0 4px 14px rgba(0,0,0,.18);z-index:9;min-width:150px;color:var(--ink)}
+#ctip b{display:block;margin-bottom:.3em}
+#ctip .crow{display:flex;justify-content:space-between;gap:1em}
+#ctip .csw{display:inline-block;width:9px;height:9px;border-radius:2px;margin-right:5px;vertical-align:middle}
+</style>
+<div id="chart-wrap">
+  <h2>Recent CSO spilling, rainfall &amp; temperature</h2>
+  <div class="csub">Upstream storm-overflow spill hours &mdash; same day, and trailing 2- and 7-day cumulative sums (the three CSO panels share one y-axis) &mdash; with daily rainfall and mean temperature over the last 45 days, in the style of the <a href="2025.html">2025 review</a>. Hover for values.</div>
+  <div id="chart-panels"></div>
+</div>
+<div id="ctip" hidden></div>
+<script>
+(function(){
+var DATA=[{"d": "2026-05-21", "cs": 0.0, "c2": 0.0, "c": 1.7, "r": 0.4, "t": 16.2}, {"d": "2026-05-22", "cs": 0.0, "c2": 0.0, "c": 1.7, "r": 0.0, "t": 19.7}, {"d": "2026-05-23", "cs": 0.0, "c2": 0.0, "c": 1.7, "r": 0.0, "t": 18.1}, {"d": "2026-05-24", "cs": 0.0, "c2": 0.0, "c": 1.7, "r": 0.0, "t": 21.1}, {"d": "2026-05-25", "cs": 0.0, "c2": 0.0, "c": 1.7, "r": 0.0, "t": 25.2}, {"d": "2026-05-26", "cs": 0.07, "c2": 0.07, "c": 0.07, "r": 0.0, "t": 26.8}, {"d": "2026-05-27", "cs": 0.0, "c2": 0.07, "c": 0.07, "r": 0.0, "t": 24.6}, {"d": "2026-05-28", "cs": 0.0, "c2": 0.0, "c": 0.07, "r": 0.0, "t": 21.5}, {"d": "2026-05-29", "cs": 0.0, "c2": 0.0, "c": 0.07, "r": 0.1, "t": 17.8}, {"d": "2026-05-30", "cs": 0.0, "c2": 0.0, "c": 0.07, "r": 0.0, "t": 18.0}, {"d": "2026-05-31", "cs": 0.0, "c2": 0.0, "c": 0.07, "r": 0.0, "t": 16.8}, {"d": "2026-06-01", "cs": 0.0, "c2": 0.0, "c": 0.07, "r": 9.2, "t": 16.0}, {"d": "2026-06-02", "cs": 12.77, "c2": 12.77, "c": 12.77, "r": 6.1, "t": 15.9}, {"d": "2026-06-03", "cs": 0.0, "c2": 12.77, "c": 12.77, "r": 2.7, "t": 15.2}, {"d": "2026-06-04", "cs": 0.95, "c2": 0.95, "c": 13.72, "r": 4.9, "t": 14.2}, {"d": "2026-06-05", "cs": 0.0, "c2": 0.95, "c": 13.72, "r": 0.4, "t": 13.6}, {"d": "2026-06-06", "cs": 0.0, "c2": 0.0, "c": 13.72, "r": 8.0, "t": 13.2}, {"d": "2026-06-07", "cs": 0.0, "c2": 0.0, "c": 13.72, "r": 3.4, "t": 14.8}, {"d": "2026-06-08", "cs": 0.0, "c2": 0.0, "c": 13.72, "r": 6.6, "t": 14.1}, {"d": "2026-06-09", "cs": 0.4, "c2": 0.4, "c": 1.35, "r": 14.2, "t": 12.5}, {"d": "2026-06-10", "cs": 0.2, "c2": 0.6, "c": 1.55, "r": 1.3, "t": 13.0}, {"d": "2026-06-11", "cs": 0.07, "c2": 0.27, "c": 0.67, "r": 5.2, "t": 13.3}, {"d": "2026-06-12", "cs": 0.0, "c2": 0.07, "c": 0.67, "r": 0.0, "t": 15.5}, {"d": "2026-06-13", "cs": 0.0, "c2": 0.0, "c": 0.67, "r": 0.0, "t": 16.0}, {"d": "2026-06-14", "cs": 0.0, "c2": 0.0, "c": 0.67, "r": 0.0, "t": 17.3}, {"d": "2026-06-15", "cs": 0.0, "c2": 0.0, "c": 0.67, "r": 0.3, "t": 18.0}, {"d": "2026-06-16", "cs": 0.0, "c2": 0.0, "c": 0.27, "r": 0.1, "t": 17.8}, {"d": "2026-06-17", "cs": 0.0, "c2": 0.0, "c": 0.07, "r": 1.4, "t": 18.1}, {"d": "2026-06-18", "cs": 0.0, "c2": 0.0, "c": 0.0, "r": 0.0, "t": 19.7}, {"d": "2026-06-19", "cs": 0.0, "c2": 0.0, "c": 0.0, "r": 0.0, "t": 19.3}, {"d": "2026-06-20", "cs": 0.0, "c2": 0.0, "c": 0.0, "r": 0.3, "t": 19.6}, {"d": "2026-06-21", "cs": 0.0, "c2": 0.0, "c": 0.0, "r": 0.0, "t": 22.2}, {"d": "2026-06-22", "cs": 64.87, "c2": 64.87, "c": 64.87, "r": 3.7, "t": 24.5}, {"d": "2026-06-23", "cs": 0.1, "c2": 64.97, "c": 64.97, "r": 0.2, "t": 26.6}, {"d": "2026-06-24", "cs": 0.0, "c2": 0.1, "c": 64.97, "r": 0.0, "t": 28.4}, {"d": "2026-06-25", "cs": 0.0, "c2": 0.0, "c": 64.97, "r": 0.0, "t": 29.7}, {"d": "2026-06-26", "cs": 0.0, "c2": 0.0, "c": 64.97, "r": 0.0, "t": 26.2}, {"d": "2026-06-27", "cs": 0.0, "c2": 0.0, "c": 64.97, "r": 0.0, "t": 22.7}, {"d": "2026-06-28", "cs": 0.0, "c2": 0.0, "c": 64.97, "r": 1.2, "t": 18.9}, {"d": "2026-06-29", "cs": 0.0, "c2": 0.0, "c": 0.1, "r": 0.0, "t": 17.3}, {"d": "2026-06-30", "cs": 3.3, "c2": 3.3, "c": 3.3, "r": 1.4, "t": 17.9}, {"d": "2026-07-01", "cs": 0.0, "c2": 3.3, "c": 3.3, "r": 0.0, "t": 18.3}, {"d": "2026-07-02", "cs": 0.0, "c2": 0.0, "c": 3.3, "r": 0.3, "t": 19.6}, {"d": "2026-07-03", "cs": 0.0, "c2": 0.0, "c": 3.3, "r": 0.0, "t": 18.4}, {"d": "2026-07-04", "cs": 0.0, "c2": 0.0, "c": 3.3, "r": 0.0, "t": 19.0}, {"d": "2026-07-05", "cs": 0.0, "c2": 0.0, "c": 3.3, "r": 0.0, "t": 19.8}];
+if(!DATA||!DATA.length)return;
+var wrap=document.getElementById('chart-wrap');
+function cssv(n){return getComputedStyle(wrap).getPropertyValue(n).trim();}
+var days=DATA.map(function(d){return d.d;});
+var t0=Date.parse(days[0]),t1=Date.parse(days[days.length-1]);
+if(t1===t0){t1=t0+86400000;}
+var M={l:46,r:12,t:16,b:16};
+var W=880,H=92;
+var MON=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+function xOf(ds){return M.l+(Date.parse(ds)-t0)/(t1-t0)*(W-M.l-M.r);}
+function niceMax(v){if(!(v>0)){return 1;}var p=Math.pow(10,Math.floor(Math.log10(v)));var n=v/p;var m=n<=1?1:n<=2?2:n<=5?5:10;return m*p;}
+function fmtDate(ds){var d=new Date(ds);return d.getUTCDate()+' '+MON[d.getUTCMonth()];}
+var csoMax=niceMax(Math.max.apply(null,DATA.map(function(d){return Math.max(d.cs||0,d.c2||0,d.c||0);})));
+var rainMax=niceMax(Math.max.apply(null,DATA.map(function(d){return d.r||0;})));
+var temps=DATA.map(function(d){return d.t;}).filter(function(v){return v!=null;});
+var tMax=niceMax(temps.length?Math.max.apply(null,temps):20);
+var panels=[
+ {key:'cs',label:'CSO spilling',unit:'hours, same day',color:'--cso',kind:'bar',max:csoMax,min:0},
+ {key:'c2',label:'CSO spilling',unit:'hours, trailing 2 days (cumulative)',color:'--cso',kind:'bar',max:csoMax,min:0},
+ {key:'c',label:'CSO spilling',unit:'hours, trailing 7 days (cumulative)',color:'--cso',kind:'bar',max:csoMax,min:0},
+ {key:'r',label:'Rainfall',unit:'mm/day',color:'--rain',kind:'bar',max:rainMax,min:0},
+ {key:'t',label:'Temperature',unit:'°C daily mean',color:'--temp',kind:'line',max:tMax,min:0}
+];
+function el(t,a){var e=document.createElementNS('http://www.w3.org/2000/svg',t);for(var k in a){e.setAttribute(k,a[k]);}return e;}
+function txt(x,y,s,a){var e=el('text',Object.assign({x:x,y:y},a));e.textContent=s;return e;}
+function fmtTick(v){return (v%1)?v.toFixed(1):String(v);}
+function render(){
+  var cont=document.getElementById('chart-panels');cont.innerHTML='';
+  W=cont.clientWidth||880;
+  var weeks=[];var wk=new Date(t0);var add=(1-wk.getUTCDay()+7)%7;wk.setUTCDate(wk.getUTCDate()+add);
+  while(wk.getTime()<=t1){weeks.push(new Date(wk));wk.setUTCDate(wk.getUTCDate()+7);}
+  var dayW=(W-M.l-M.r)/Math.max(days.length-1,1);
+  var barW=Math.max(2,Math.min(dayW*0.7,9));
+  panels.forEach(function(p,pi){
+    var mn=p.min||0,mx=p.max,yA=(H-M.t-M.b),yBase=H-M.b;
+    function yScale(v){return M.t+(1-(v-mn)/(mx-mn))*yA;}
+    var svg=el('svg',{viewBox:'0 0 '+W+' '+H,role:'img','aria-label':p.label});
+    [mn,(mn+mx)/2,mx].forEach(function(tk){var y=yScale(tk);
+      svg.appendChild(el('line',{'class':'cgrid',x1:M.l,y1:y,x2:W-M.r,y2:y}));
+      svg.appendChild(txt(M.l-5,y+3,fmtTick(tk),{'class':'ctick','text-anchor':'end'}));});
+    weeks.forEach(function(w){var x=xOf(w.toISOString().slice(0,10));
+      svg.appendChild(el('line',{'class':'cgrid',x1:x,y1:M.t,x2:x,y2:yBase,opacity:0.45}));
+      if(pi===panels.length-1){svg.appendChild(txt(x,H-2,fmtDate(w.toISOString().slice(0,10)),{'class':'ctick','text-anchor':'middle'}));}});
+    svg.appendChild(txt(M.l,11,p.label,{'class':'cplabel'}));
+    svg.appendChild(txt(M.l+p.label.length*6.4+8,11,p.unit,{'class':'cpunit'}));
+    var col=cssv(p.color);
+    if(p.kind==='bar'){
+      DATA.forEach(function(d){var v=d[p.key];if(v==null||v<=0){return;}var x=xOf(d.d),y=yScale(Math.min(v,mx));
+        svg.appendChild(el('rect',{x:x-barW/2,y:y,width:barW,height:yBase-y,fill:col,rx:1}));});
+    }else{
+      var pts=DATA.filter(function(d){return d[p.key]!=null;}).map(function(d){return xOf(d.d)+','+yScale(Math.min(d[p.key],mx));}).join(' ');
+      svg.appendChild(el('polyline',{points:pts,fill:'none',stroke:col,'stroke-width':2,'stroke-linejoin':'round'}));
+    }
+    svg.appendChild(el('line',{'class':'ccross',x1:0,y1:M.t,x2:0,y2:yBase,visibility:'hidden'}));
+    var div=document.createElement('div');div.className='cpanel';div.appendChild(svg);cont.appendChild(div);
+  });
+  attachHover(cont);
+}
+function attachHover(cont){
+  var tip=document.getElementById('ctip');
+  cont.addEventListener('pointermove',function(e){
+    var rect=cont.getBoundingClientRect();var px=e.clientX-rect.left;
+    var frac=(px-M.l)/(W-M.l-M.r);var tt=t0+frac*(t1-t0);
+    var best=null,bd=1e18;DATA.forEach(function(d){var dt=Math.abs(Date.parse(d.d)-tt);if(dt<bd){bd=dt;best=d;}});
+    var chs=cont.querySelectorAll('.ccross');
+    if(!best||frac<-0.02||frac>1.02){tip.hidden=true;chs.forEach(function(c){c.setAttribute('visibility','hidden');});return;}
+    var x=xOf(best.d);chs.forEach(function(c){c.setAttribute('x1',x);c.setAttribute('x2',x);c.setAttribute('visibility','visible');});
+    var rows=[
+      ['--cso','CSO same day',(best.cs==null?0:best.cs).toFixed(1)+' h'],
+      ['--cso','CSO trailing 2d',(best.c2==null?0:best.c2).toFixed(1)+' h'],
+      ['--cso','CSO trailing 7d',(best.c==null?0:best.c).toFixed(1)+' h'],
+      ['--rain','Rain',(best.r==null?0:best.r).toFixed(1)+' mm']
+    ];
+    if(best.t!=null){rows.push(['--temp','Temp',best.t.toFixed(1)+' °C']);}
+    tip.innerHTML='<b>'+fmtDate(best.d)+'</b>'+rows.map(function(r){return '<div class="crow"><span><span class="csw" style="background:'+cssv(r[0])+'"></span>'+r[1]+'</span><span>'+r[2]+'</span></div>';}).join('');
+    tip.hidden=false;var tx=e.clientX+14;if(tx+170>window.innerWidth){tx=e.clientX-180;}
+    tip.style.left=tx+'px';tip.style.top=(e.clientY+12)+'px';
+  });
+  cont.addEventListener('pointerleave',function(){tip.hidden=true;cont.querySelectorAll('.ccross').forEach(function(c){c.setAttribute('visibility','hidden');});});
+}
+render();window.addEventListener('resize',render);
+})();
+</script>
+
 <div class="disclaimer">
     This tool uses a simplified "upstream" test based on longitude and/or latitude. For Conham, CSOs east of the site are counted as upstream. This may include or miss some actual upstream sources, especially in complex river sections.
     <br>Distances are as the crow flies (not measured along the river or watercourse).
