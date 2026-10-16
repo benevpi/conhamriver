@@ -4,6 +4,10 @@ on:
   schedule:
     - cron: '15 */3 * * *'      # every hour at :15, adjust as needed
   workflow_dispatch:
+  push:
+    branches: [main]           # republish immediately when main changes
+    paths-ignore:
+      - 'docs/**'              # skip the bot's own regenerated-report commits
 
 permissions:
   contents: write
