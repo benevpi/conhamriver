@@ -178,3 +178,24 @@ and needs `services.arcgis.com` egress; commit `conham_nearby_cso_events.csv`,
 then `report` lists, for each high-E. coli day, the upstream outfalls that
 spilled in the prior 7 days, flagging those on watercourses outside the existing
 filter. Output: `docs/data/conham_nearby_cso_investigation.md`.
+
+## Bristol Avon citizen water-quality data (FreshWater Watch)
+
+`scripts/extract_bristol_avon.py` pulls the Bristol Avon rows out of the large
+FreshWater Watch export `Global_Data_Set_XvsX_0.csv` (a ~73k-row global
+citizen-science dataset). The dataset's management-catchment tag is unreliable
+here (the tidal Avon at Conham is tagged "Severn England TraC", Kennet & Avon
+canal sites as "Avon Hampshire"), so selection is by **site name + geography +
+water-body type**: flowing waters (rivers/streams) on the English side near
+Conham, excluding canals/locks/ponds/lakes and the North Somerset coastal
+streams that drain to the Severn rather than the Avon.
+
+```bash
+python scripts/extract_bristol_avon.py
+```
+
+Writes `docs/data/bristol_avon_freshwater_watch.csv` (~2,470 river/stream rows,
+2014-2026; 341 in 2025) with a parsed `watercourse` label, `distance_to_conham_mi`,
+`upstream_of_conham`, nitrate/phosphate, and field observations. Note this survey
+measures nutrients (nitrate/phosphate) and observations only -- it contains no
+E. coli data (the bacteria columns are empty across the whole source file).
